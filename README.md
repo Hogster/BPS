@@ -4,9 +4,7 @@ A BLE positioning sytem for Homeassistant providing realtime tracking indoors. D
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=agittins&repository=bermuda&category=Integration)
 
-- Precisely track your bluetooth devices (indoors) using using [ESPHome](https://esphome.io/) [bluetooth_proxy] in [HomeAssistant](https://home-assistant.io/), (https://esphome.io/components/bluetooth_proxy.html) devices.
-
-- (eventually) Triangulate device positions! Like, on a map. Maybe.
+- Precisely track your bluetooth devices (indoors) using using [bluetooth_proxy] [ESPHome](https://esphome.io/) (https://esphome.io/components/bluetooth_proxy.html) devices in [HomeAssistant](https://home-assistant.io/).
 
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
