@@ -21,7 +21,7 @@ A BLE positioning sytem for Homeassistant providing realtime tracking indoors. D
 
 ## What it does:
 
-BLE Positioning System (BPS) continues on the great work by [![user_profile][@agittins]] and his [bermuda]. [@agittins]([user_profile])
+BLE Positioning System (BPS) continues on the great work by [@agittins](https://github.com/agittins/bermuda) and his [bermuda].
 Based on Bermudas ability to, in near-realtime, estimate distance to an ESPHome devices running bluetooth_proxy BPS can leverage this information and by trilaterate give a precise position.
 
 By placing the location of the bluetooth devices as well as defining specific zones, BPS can show:
