@@ -11,7 +11,6 @@ A BLE positioning sytem for Homeassistant providing realtime tracking indoors. D
 [![License][license-shield]](LICENSE)
 
 [![pre-commit][pre-commit-shield]][pre-commit]
-[![Black][black-shield]][black]
 
 [![hacs][hacsbadge]][hacs]
 [![Project Maintenance][maintenance-shield]][user_profile]
@@ -22,38 +21,50 @@ A BLE positioning sytem for Homeassistant providing realtime tracking indoors. D
 
 ## What it does:
 
-Bermuda aims to let you track any bluetooth device, and have Homeassistant tell you where in your house that device is. The only extra hardware you need are esp32 devices running esphome that act as bluetooth proxies. Alternatively, Shelly Plus devices can also perform this function.
+BLE Positioning System (BPS) continues on the great work by @agittins [![bermuda]][bermuda].
+Based on Bermudas ability to, in near-realtime, estimate distance to an ESPHome devices running bluetooth_proxy BPS can leverage this information and by trilaterate give a precise position.
 
-- Area-based device location (ie, device-level room prescence) is working reasonably well.
-- Creates sensors for Area and Distance for devices you choose
-- Supports iBeacon devices, including those with randomised MAC addresses (like Android phones running HA Companion App)
-- Supports IRK (resolvable keys) via the [Private BLE Device](https://www.home-assistant.io/integrations/private_ble_device/) core component. Once your iOS device (or Android!) is set up in Private BLE Device, it will automatically receive Bermuda sensors as well!
-- Creates `device_tracker` entities for chosen devices, which can be linked to "Person"s for Home/Not Home tracking
-- Configurable settings for rssi reference level, environmental attenuation, max tracking radius
-- Provides a comprehensive json/yaml dump of devices and their distances from each bluetooth
-  receiver, via the `bermuda.dump_devices` service.
+By placing the location of the bluetooth devices as well as defining specific zones, BPS can show:
+- Where exactly a device is located on a floorplan (like a GPS on a map)
+- Determine which floor you are currently on. Gives the ability to automate for changing floor.
+- Determine which zone a device is currently in. Gives the ability to automate based on specific devices entering or leaving a zone. 
+
+This is done for all devices you track with Bermuda so you can track different persons or objects and automate based on this.
+
+For my specific purpose I use Sonoff NS Panels in all rooms of my house which I run esphome on. This together with other stationary bluetooth proxies I have good coverage to do trilataration.
+
+Bermuda aims to let you track any bluetooth device, and have Homeassistant tell you where in your house that device is. The only extra hardware you need are esp32 devices running esphome that act as bluetooth proxies. Alternatively, Shelly Plus devices can also perform this function.
 
 ## What you need:
 
-- One or more devices providing bluetooth proxy information to HA using esphome's `bluetooth_proxy` component.
-  I like the D1-Mini32 boards because they're cheap and easy to deploy.
+- Home Assistant up and running (duhh!)
+- Bermuda [bermuda] installed and tracking at least one bluetooth device
+- At least devices providing bluetooth proxy information to HA using esphome's `bluetooth_proxy` component. (it needs data from three devices to be able to track so if you only have three devices and you loose one due to distance it is not able to track)
+
+@agittins write on the Bermuda readme:
+"  I like the D1-Mini32 boards because they're cheap and easy to deploy.
   The Shelly Plus bluetooth proxy devices are reported to work well.
   Only natively-supported bluetooth devices are supported, meaning there's no current or planned support for MQTT devices etc.
 
 - USB Bluetooth on your HA host is not ideal, since it does not timestamp the advertisement packets.
-  However it can be used for simple "Home/Not Home" tracking, and Area distance support is enabled currently.
+  However it can be used for simple "Home/Not Home" tracking, and Area distance support is enabled currently."
 
-- Some bluetooth BLE devices you want to track. Smart watches, beacon tiles, thermometers etc
+  I can from my own experience add NS Panel since I use them all around the house as replacement for wall switches and thus get great coverage.
 
-- Install Bermuda via HACS: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=agittins&repository=bermuda&category=Integration)
+
+- Install BPS via HACS: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=agittins&repository=bermuda&category=Integration)
 
 ## Documentation and help - the Wiki
 
-See [The Wiki](https://github.com/agittins/bermuda/wiki/) for more info on how it works and how to configure Bermuda for your home.
+See [The Wiki](https://github.com/Hogster/ble_pos_sys/wiki/) for more info on how it works and how to configure for your home.
 
 ## Screenshots
 
 After installing, the integration should be visible in Settings, Devices & Services
+
+
+You will now also have a new panel in the side panel named "BPS"
+
 
 ![The integration, in Settings, Devices & Services](img/screenshots/integration.png)
 
@@ -182,12 +193,10 @@ Code template was mainly taken from [@Ludeeus](https://github.com/ludeeus)'s [in
 ---
 
 [integration_blueprint]: https://github.com/custom-components/integration_blueprint
-[black]: https://github.com/psf/black
-[black-shield]: https://img.shields.io/badge/code%20style-black-000000.svg?style=for-the-badge
-[buymecoffee]: https://www.buymeacoffee.com/AshleyGittins
+[buymecoffee]: https://buymeacoffee.com/hogster
 [buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
-[commits-shield]: https://img.shields.io/github/commit-activity/y/agittins/bermuda.svg?style=for-the-badge
-[commits]: https://github.com/agittins/bermuda/commits/main
+[commits-shield]: https://img.shields.io/github/commit-activity/y/Hogster/ble_pos_sys.svg?style=for-the-badge
+[commits]: https://github.com/Hogster/ble_pos_sys/commits/main
 [hacs]: https://hacs.xyz
 [hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
 [discord]: https://discord.gg/Qa5fW2R
@@ -195,10 +204,11 @@ Code template was mainly taken from [@Ludeeus](https://github.com/ludeeus)'s [in
 [exampleimg]: example.png
 [forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
 [forum]: https://community.home-assistant.io/
-[license-shield]: https://img.shields.io/github/license/agittins/bermuda.svg?style=for-the-badge
-[maintenance-shield]: https://img.shields.io/badge/maintainer-%40agittins-blue.svg?style=for-the-badge
+[license-shield]: https://img.shields.io/github/license/Hogster/ble_pos_sys.svg?style=for-the-badge
+[maintenance-shield]: https://img.shields.io/badge/maintainer-%40Hogster-blue.svg?style=for-the-badge
 [pre-commit]: https://github.com/pre-commit/pre-commit
 [pre-commit-shield]: https://img.shields.io/badge/pre--commit-enabled-brightgreen?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/agittins/bermuda.svg?style=for-the-badge
-[releases]: https://github.com/agittins/bermuda/releases
-[user_profile]: https://github.com/agittins
+[releases-shield]: https://img.shields.io/github/release/Hogster/ble_pos_sys.svg?style=for-the-badge
+[releases]: https://github.com/Hogster/ble_pos_sys/releases
+[user_profile]: https://github.com/Hogster
+[bermuda]: https://github.com/agittins/bermuda
