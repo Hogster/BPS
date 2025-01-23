@@ -38,6 +38,7 @@ Bermuda aims to let you track any bluetooth device, and have Homeassistant tell 
 ## What you need:
 
 - Home Assistant up and running (duhh!)
+(https://media.tenor.com/bZzADZu6H1AAAAAM/disappointed-facepalm.gif)
 - Bermuda [bermuda] installed and tracking at least one bluetooth device
 - At least devices providing bluetooth proxy information to HA using esphome's `bluetooth_proxy` component. (it needs data from three devices to be able to track so if you only have three devices and you loose one due to distance it is not able to track)
 
