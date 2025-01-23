@@ -38,11 +38,11 @@ Bermuda aims to let you track any bluetooth device, and have Homeassistant tell 
 ## What you need:
 
 - Home Assistant up and running (duhh!)
-![No shit Sherlok](https://media.tenor.com/bZzADZu6H1AAAAAM/disappointed-facepalm.gif)
+![duhh](https://media.tenor.com/bZzADZu6H1AAAAAM/disappointed-facepalm.gif)
 - Bermuda [bermuda] installed and tracking at least one bluetooth device
 - At least devices providing bluetooth proxy information to HA using esphome's `bluetooth_proxy` component. (it needs data from three devices to be able to track so if you only have three devices and you loose one due to distance it is not able to track)
 
-@agittins write on the Bermuda readme:
+@agittins writes on the Bermuda readme:
 "  I like the D1-Mini32 boards because they're cheap and easy to deploy.
   The Shelly Plus bluetooth proxy devices are reported to work well.
   Only natively-supported bluetooth devices are supported, meaning there's no current or planned support for MQTT devices etc.
@@ -62,12 +62,17 @@ See [The Wiki](https://github.com/Hogster/ble_pos_sys/wiki/) for more info on ho
 ## Screenshots
 
 After installing, the integration should be visible in Settings, Devices & Services
+![The integration, in Settings, Devices & Services](img/screenshots/integration1.png)
+![The integration, in Settings, Devices & Services](img/screenshots/integration2.png)
 
+The integration has now, if you are tracking devices, created 2 sensors for each device you are tracking. One for tracking device floor and another for tracking device zone
+![Created entities](img/screenshots/entities.png)
 
 You will now also have a new panel in the side panel named "BPS"
 
+![BPS Panel](img/screenshots/panel.png)
 
-![The integration, in Settings, Devices & Services](img/screenshots/integration.png)
+
 
 Press the `CONFIGURE` button to see the configuration dialog. At the bottom is a field
 where you can enter/list any bluetooth devices the system can see. Choosing devices
@@ -95,49 +100,23 @@ See [The FAQ](https://github.com/agittins/bermuda/wiki/FAQ) in the Wiki!
 
 ## TODO / Ideas
 
-- [ ] ~~Switch to performing updates on receipt of advertisements, instead of periodic polling~~ (nope, intervals work better)
-- [ ] "Solve" realtime approximation of inter-proxy distances using Triangle Inequality
-- [ ] Resolve x/y co-ordinates of all scanners and proxies (!)
-- [ ] Some sort of map, just pick two proxies as an x-axis vector and go
-- [ ] Config setting to define absolute locations of two proxies
-- [ ] Support some way to "pin" more than two proxies/tags, and have it not break.
-- [ ] An interface to define Areas in relation to the pinned proxies
-- [ ] Experiment with some of
-      [these algo's](https://mdpi-res.com/d_attachment/applsci/applsci-10-02003/article_deploy/applsci-10-02003.pdf?version=1584265508)
-      for improving accuracy (too much math for me!). Particularly weighting shorter
-      distances higher and perhaps the cosine similarity fingerprinting, possibly against
-      fixed beacons as well to smooth environmental rssi fluctuations.
+- [ ] Improve the GUI
+- [ ] Be able to create zones that are not square
+- [ ] Improve speed and performance in general
+- [ ] Create a lovalace card with a map showing tracked devices
+- [ ] And more...
 
 ## Hacking tips
 
-Wanna improve this? Awesome! Bear in mind this is my first ever HA
-integration, and I'm much more greybeard sysadmin than programmer, so ~~if~~where
-I'm doing stupid things I really would welcome some improvements!
+To set the stage. I'm not a programmer and not even close to have this as a profession. I'm just a hobyist who love home automation and built this out of the urge to be able track people in realtime.
+Do you think there is room to improve or in any other way add to the experience. GREAT! Please contribute or let me know.
 
-You can start by using the service `bermuda.dump_devices` to examine the
-internal state.
+Again, this work is only possible due to the great work by [@agittins](https://github.com/agittins) and his [Bermuda](https://github.com/agittins/bermuda). This is a teamwork, if we can improve Bermuda's abilties (precision & stability) BPS will also greatly benefit.
 
-### Using `bermuda.dump_devices` service
-
-Just calling the service `bermuda.dump_devices` will give you a full dump of the internal
-data structures that bermuda uses to track and calculate its state. This can be helpful
-for working out what's going on and troubleshooting, or to use if you have a very custom
-need that you can solve with template sensors etc.
-
-If called with no parameters, the service will return all data. parameters are available
-which let you limit or reformat the resulting data to make it easier to work with. In particular
-the `addresses` parameter is helpful to only return data relevant for one or more MAC addresses
-(or iBeacon UUIDs).
-See the information on parameters in the `Services` page in home assistant, under `Developer Tools`.
-
-Important: If you decide to use the results of this call for your own templates etc, bear in mind that
-the format might change in any release, and won't necessarily be considered a "breaking change".
-This is beacuse the structure is used internally, rather than being a published API. That said, efforts will be made
-to indicate in the release notes if fields in the structure are renamed or moved, but not for adding new
-items.
 
 ## Prior Art
 
+There are other like [Bermuda](https://github.com/agittins/bermuda), `bluetooth_tracker`, `ble_tracker` and ESPresense. 
 The `bluetooth_tracker` and `ble_tracker` integrations are only built to give a "home/not home"
 determination, and don't do "Area" based location. (nb: "Zones" are places outside the
 home, while "Areas" are rooms/areas inside the home). I wanted to be free to experiment with
