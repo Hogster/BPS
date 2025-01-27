@@ -24,7 +24,7 @@ A BLE positioning sytem for Homeassistant providing realtime, multi device, floo
 BLE Positioning System (BPS) continues on the great work by [@agittins](https://github.com/agittins) and his [Bermuda](https://github.com/agittins/bermuda).
 Based on Bermudas ability to, in near-realtime, estimate distance to ESPHome devices running bluetooth_proxy BPS can leverage this information and by trilaterate give a precise position.
 
-By placing the location of the bluetooth devices as well as defining specific zones, BPS can show:
+By exactly placing the location of the bluetooth_proxy devices as well as defining specific zones, BPS can show:
 - Where exactly a device is located on a floorplan (like a GPS on a map)
 - Determine which floor you are currently on. Gives the ability to automate when changing floor.
 - Determine which zone (Kitchen, Bedroom etc.) a device is currently in. Gives the ability to automate based on specific devices entering or leaving a zone. 
