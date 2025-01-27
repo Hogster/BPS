@@ -1,10 +1,10 @@
 ![BPS Logo](img/icon.png)
-# ble_pos_sys
-A BLE positioning sytem for Homeassistant providing realtime tracking indoors. Dependent on the Bermuda component built by @agattins. 
+# BLE Positioning System (BPS)
+A BLE positioning sytem for Homeassistant providing realtime, multi device, floor plan tracking indoors. Dependent on the Bermuda component built by @agattins. 
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=agittins&repository=bermuda&category=Integration)
 
-- Precisely track your bluetooth devices (indoors) using using [bluetooth_proxy] [ESPHome](https://esphome.io/) (https://esphome.io/components/bluetooth_proxy.html) devices in [HomeAssistant](https://home-assistant.io/).
+- Precisely track your bluetooth devices (indoors) using [bluetooth_proxy] [ESPHome](https://esphome.io/) (https://esphome.io/components/bluetooth_proxy.html) devices in [HomeAssistant](https://home-assistant.io/).
 
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
@@ -22,16 +22,16 @@ A BLE positioning sytem for Homeassistant providing realtime tracking indoors. D
 ## What it does:
 
 BLE Positioning System (BPS) continues on the great work by [@agittins](https://github.com/agittins) and his [Bermuda](https://github.com/agittins/bermuda).
-Based on Bermudas ability to, in near-realtime, estimate distance to an ESPHome devices running bluetooth_proxy BPS can leverage this information and by trilaterate give a precise position.
+Based on Bermudas ability to, in near-realtime, estimate distance to ESPHome devices running bluetooth_proxy BPS can leverage this information and by trilaterate give a precise position.
 
 By placing the location of the bluetooth devices as well as defining specific zones, BPS can show:
 - Where exactly a device is located on a floorplan (like a GPS on a map)
-- Determine which floor you are currently on. Gives the ability to automate for changing floor.
-- Determine which zone a device is currently in. Gives the ability to automate based on specific devices entering or leaving a zone. 
+- Determine which floor you are currently on. Gives the ability to automate when changing floor.
+- Determine which zone (Kitchen, Bedroom etc.) a device is currently in. Gives the ability to automate based on specific devices entering or leaving a zone. 
 
 This is done for all devices you track with Bermuda so you can track different persons or objects and automate based on this.
 
-For my specific purpose I use Sonoff NS Panels in all rooms of my house which I run esphome on. This together with other stationary bluetooth proxies I have good coverage to do trilataration.
+For my specific purpose I Sonoff NS Panels in all rooms of my house which I run esphome on. This together with other stationary bluetooth proxies I have good coverage to do trilataration.
 
 Bermuda aims to let you track any bluetooth device, and have Homeassistant tell you where in your house that device is. The only extra hardware you need are esp32 devices running esphome that act as bluetooth proxies. Alternatively, Shelly Plus devices can also perform this function.
 
@@ -40,7 +40,7 @@ Bermuda aims to let you track any bluetooth device, and have Homeassistant tell 
 - Home Assistant up and running (duhh!)
 ![duhh](https://media.tenor.com/bZzADZu6H1AAAAAM/disappointed-facepalm.gif)
 - Bermuda [bermuda] installed and tracking at least one bluetooth device
-- At least devices providing bluetooth proxy information to HA using esphome's `bluetooth_proxy` component. (it needs data from three devices to be able to track so if you only have three devices and you loose one due to distance it is not able to track)
+- At least three devices providing bluetooth proxy information to HA using esphome's `bluetooth_proxy` component. (it needs data from three devices to be able to track so if you only have three devices and you loose one due to distance it is not able to track)
 
 @agittins writes on the Bermuda readme:
 "  I like the D1-Mini32 boards because they're cheap and easy to deploy.
