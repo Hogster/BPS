@@ -4,7 +4,7 @@
     "version": "0.0.0",
     "documentation": "https://github.com/Hogster/BPS",
     "issue_tracker": "https://github.com/Hogster/BPS/issues",
-    "dependencies": [],
+    "dependencies": ["http"],
     "codeowners": ["@Hogster"],
     "requirements": ["aiofiles>=23.1.0", "numpy>=2.0.0", "scipy>=1.14.0", "shapely>=2.0.0"],
     "config_flow": true
