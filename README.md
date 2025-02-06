@@ -59,7 +59,7 @@ Bermuda aims to let you track any bluetooth device, and have Homeassistant tell 
 
 ## Documentation and help - the Wiki
 
-See [The Wiki](https://github.com/Hogster/ble_pos_sys/wiki/) for more info on how it works and how to configure for your home.
+See [The Wiki](https://github.com/Hogster/BPS/wiki/) for more info on how it works and how to configure for your home.
 
 ## Screenshots
 
