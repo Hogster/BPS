@@ -144,7 +144,7 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 
 ## Credits
 
-The idea for this project was initiated by the work of agattins and his [Bermuda](https://github.com/agittins/bermuda). With an idea and great help from chatGPT this project came to life.
+The idea for this project was initiated by the work of [@agittins](https://github.com/agittins) and his [Bermuda](https://github.com/agittins/bermuda). With an idea and great help from chatGPT this project came to life.
 
 ## Say thanks
 
