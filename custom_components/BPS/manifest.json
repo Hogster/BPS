@@ -1,0 +1,10 @@
+{
+    "domain": "bps",
+    "name": "BLE Positioning System",
+    "version": "1.0.0",
+    "documentation": "https://example.com",
+    "dependencies": [],
+    "codeowners": ["@your-github-handle"],
+    "requirements": ["aiofiles>=23.1.0", "numpy>=2.0.0", "scipy>=1.14.0", "shapely>=2.0.0"],
+    "config_flow": true
+}
