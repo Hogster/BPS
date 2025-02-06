@@ -74,41 +74,19 @@ You will now also have a new panel in the side panel named "BPS"
 
 ![BPS Panel](img/screenshots/panel.png)
 
+The BPS panel for tracking is used for placing receivers (Bluetooth_Proxy devices) and defining zones. The "real-time" tracking is more to get a sense about what i happening and a form of debugging. You will notice where you have good precision as well as worse. And thus can give you an idea where to add devices for improved tracking.
 
-
-Press the `CONFIGURE` button to see the configuration dialog. At the bottom is a field
-where you can enter/list any bluetooth devices the system can see. Choosing devices
-will add them to the configured devices list and creating sensor entities for them. See [How Do The Settings Work?](#how-do-the-settings-work) for more info.
-
-![Bermuda integration configuration option flow](img/screenshots/configuration.png)
-
-Choosing the device screen shows the current sensors and other info. Note that there are extra sensors in the "not shown" section that are disabled by default (the screenshot shows several of these enabled already). You can edit the properties of these to enable them for more detailed data on your device locations. This is primarily intended for troubleshooting or development, though.
-
-![Screenshot of device information view](img/screenshots/deviceinfo.png)
-
-The sensor information also includes attributes area name and id, relevant MAC addresses
-etc.
-
-![Bermuda sensor information](img/screenshots/sensor-info.png)
-
-In Settings, People, you can define any Bermuda device to track home/away status
-for any person/user.
-
-![Assign a Bermuda sensor for Person tracking](img/screenshots/person-tracker.png)
-
-## FAQ
-
-See [The FAQ](https://github.com/agittins/bermuda/wiki/FAQ) in the Wiki!
+![Tracking](img/screenshots/bps_tracking.gif)
 
 ## TODO / Ideas
 
-- [ ] Improve the GUI
-- [ ] Be able to create zones that are not square
+- [ ] Improve the GUI (adding circles around the receivers for showing the distance and thus where the intersections are i.e. visualizing the trilataration)
+- [ ] Be able to create zones that are not square (not a priority)
 - [ ] Improve speed and performance in general
 - [ ] Create a lovalace card with a map showing tracked devices
 - [ ] And more...
 
-## Hacking tips
+## Feed back
 
 To set the stage. I'm not a programmer and not even close to have this as a profession. I'm just a hobyist who love home automation and built this out of the urge to be able track people in realtime.
 Do you think there is room to improve or in any other way add to the experience. GREAT! Please contribute or let me know.
@@ -136,13 +114,12 @@ a fair amount of ESPresense's wheel.
 ## Installation
 
 Definitely use the HACS interface! Once you have HACS installed, go to `Integrations`, click the
-meatballs menu in the top right, and choose `Custom Repositories`. Paste `agittins/bermuda` into
+meatballs menu in the top right, and choose `Custom Repositories`. Paste `Hogster/BPS` into
 the `Repository` field, and choose `Integration` for the `Category`. Click `Add`.
 
-You should now be able to add the `Bermuda BLE Trilateration` integration. Once you have done that,
+You should now be able to add the `BLE Positioning Sytem` integration. Once you have done that,
 you need to restart Homeassistant, then in `Settings`, `Devices & Services` choose `Add Integration`
-and search for `Bermuda BLE Trilateration`. It's possible that it will autodetect for you just by
-noticing nearby bluetooth devices.
+and search for `BLE Positioning Sytem` or 'BPS'. 
 
 Once the integration is added, you need to set up your devices by clicking `Configure` in `Devices and Services`,
 `Bermuda BLE Trilateration`.
@@ -153,11 +130,11 @@ The instructions below are the generic notes from the template:
 
 1. Using the tool of choice open the directory (folder) for your HA configuration (where you find `configuration.yaml`).
 2. If you do not have a `custom_components` directory (folder) there, you need to create it.
-3. In the `custom_components` directory (folder) create a new folder called `bermuda`.
-4. Download _all_ the files from the `custom_components/bermuda/` directory (folder) in this repository.
+3. In the `custom_components` directory (folder) create a new folder called `BPS`.
+4. Download _all_ the files from the `custom_components/BPS/` directory (folder) in this repository.
 5. Place the files you downloaded in the new directory (folder) you created.
 6. Restart Home Assistant
-7. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "Bermuda BLE Trilateration"
+7. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for `BLE Positioning Sytem` or 'BPS'
 
 <!---->
 
@@ -167,10 +144,7 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 
 ## Credits
 
-This project was generated from [@oncleben31](https://github.com/oncleben31)'s [Home Assistant Custom Component Cookiecutter](https://github.com/oncleben31/cookiecutter-homeassistant-custom-component) template.
-
-Code template was mainly taken from [@Ludeeus](https://github.com/ludeeus)'s [integration_blueprint][integration_blueprint] template
-[Cookiecutter User Guide](https://cookiecutter-homeassistant-custom-component.readthedocs.io/en/stable/quickstart.html)\*\*
+The idea for this project was initiated by the work of agattins and his [Bermuda](https://github.com/agittins/bermuda). With an idea and great help from chatGPT this project came to life.
 
 ## Say thanks
 
