@@ -4,11 +4,11 @@
 //In the bottom of the page, create a new token. The name does not matter
 //Copy the token and below
 //Example: const hass_token = "my_secret_token";
-const hass_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI1MzcwNDQxMjgwNTg0YjlkYjBjZGQzYjBhZjE2N2U4NSIsImlhdCI6MTczNjE5OTgzNCwiZXhwIjoyMDUxNTU5ODM0fQ.2FxKSeEQ--wAV7Ea-V1K9IsGvbOLsnBW1xl8s8K0yg8";
+const hass_token = "";
 // Add your url that you use in your browser
 //Example1: const hassURL = "xxx.duckdns.org";
 //Example2: const hassURL = "192.168.0.10:8123";
-const hassURL = "hogshass.duckdns.org:8123";
+const hassURL = "";
 
 document.addEventListener('DOMContentLoaded', async () => {
     const canvas = document.getElementById('canvas');
