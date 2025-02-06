@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>BPS</title>
+    <link rel="stylesheet" href="bpsstyle.css">
+</head>
+<body>
+    <div class="container bg-gray-50">
+        <h1 style="font-size: 24px; font-weight: bold;">BLE Positioning System</h1>
+        <div class="flex gap-4 items-center p-1">
+            <div class="flex-1">
+                <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Floor Name</label>
+                <textarea id="mapname" placeholder="Map name" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs"></textarea>
+            </div>
+                <div class="flex-1">
+                    <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Floor Plan Image</label>
+                    <input type="file" id="upload" accept="image/png, image/jpeg" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs">
+                    <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Select existing</label>
+                    <select id="mapSelector" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs">
+                        <option value="">--Please choose an option--</option>
+                    </select>
+                </div>
+            </div>
+        
+        <div class="flex gap-2 items-center p-1">
+            <div class="flex gap-2" id="mapbuttondiv"></div>
+        </div>
+        <div class="flex gap-2 items-center p-1">
+            <div class="flex gap-2" id="savebuttondiv"></div>
+        </div>
+        <div id="trackdiv" style="display: none" class="flex gap-2 items-center p-1">
+            <div class="flex gap-2">
+                <select id="entSelector" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs">
+                    <option value="">--Please choose an option--</option>
+                </select>
+                <div class="flex gap-2 items-center p-1">
+                    <input type="checkbox" id="myCheckbox">
+                    <label style="white-space: nowrap" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" for="myCheckbox">Real time track</label>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">To use realt time tracking, Long-lived token and hassURL needs to be added! Read the docs for more info.</span>
+                    </span>
+                </div>
+                <button style="display: none" type="button" id="starttrack" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
+                    <svg width="24" height="24" viewBox="0 0 1024 1024" class="icon"  version="1.1" xmlns="http://www.w3.org/2000/svg" fill="white" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-save w-4 h-4 mr-2" ><path d="M709.485714 277.942857C709.485714 160.914286 614.4 65.828571 497.371429 65.828571S292.571429 160.914286 292.571429 277.942857c0 73.142857 204.8 358.4 204.8 358.4s212.114286-277.942857 212.114285-358.4z" fill="white" /><path d="M497.371429 709.485714l-21.942858-29.257143c-36.571429-51.2-219.428571-307.2-219.428571-387.657142C256 160.914286 365.714286 51.2 497.371429 51.2s241.371429 109.714286 241.371428 241.371429c0 87.771429-182.857143 336.457143-226.742857 387.657142l-14.628571 29.257143z m0-607.085714C394.971429 102.4 307.2 182.857143 307.2 292.571429c0 43.885714 102.4 204.8 190.171429 321.828571C585.142857 497.371429 687.542857 336.457143 687.542857 292.571429c0-109.714286-87.771429-190.171429-190.171428-190.171429z"/><path d="M928.914286 819.2H102.4C58.514286 819.2 14.628571 782.628571 14.628571 731.428571s36.571429-87.771429 87.771429-87.771428h138.971429c14.628571 0 29.257143 14.628571 29.257142 29.257143s-7.314286 29.257143-21.942857 29.257143h-146.285714c-14.628571 0-29.257143 14.628571-29.257143 29.257142s14.628571 29.257143 29.257143 29.257143h819.2c14.628571 0 29.257143 14.628571 29.257143 29.257143s-7.314286 29.257143-21.942857 29.257143z"/><path d="M928.914286 936.228571H226.742857c-14.628571 0-29.257143-14.628571-29.257143-29.257142s14.628571-29.257143 29.257143-29.257143h694.857143c14.628571 0 29.257143-14.628571 29.257143-29.257143s-14.628571-29.257143-29.257143-29.257143H102.4c-14.628571 0-29.257143-14.628571-29.257143-29.257143s14.628571-29.257143 29.257143-29.257143h819.2c43.885714 0 87.771429 36.571429 87.771429 87.771429s-36.571429 87.771429-80.457143 87.771428z"/><path d="M497.371429 263.314286m-80.457143 0a80.457143 80.457143 0 1 0 160.914285 0 80.457143 80.457143 0 1 0-160.914285 0Z"/><path d="M497.371429 365.714286C438.857143 365.714286 394.971429 321.828571 394.971429 263.314286S438.857143 160.914286 497.371429 160.914286s102.4 43.885714 102.4 102.4S555.885714 365.714286 497.371429 365.714286z m0-153.6c-29.257143 0-51.2 21.942857-51.2 51.2s21.942857 51.2 51.2 51.2 51.2-21.942857 51.2-51.2-21.942857-51.2-51.2-51.2z"/></svg>
+                    Start tracking
+                </button>
+                <button style="display: none" type="button" id="stoptrack" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye w-4 h-4 mr-2"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                    Stop tracking
+                </button>
+            </div>
+        </div>
+        <div style="display: none" id="zonediv" class="flex gap-2 items-center p-1">
+            <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Current zone:</label>
+            <label id="zonevalue" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">xxx</label>
+        </div>
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <div class="fixed right-4 top-4 w-64 bg-white p-4 rounded-lg shadow-lg max-h-[80vh] overflow-y-auto">
+        <div class="flex items-center gap-2 mb-4" data-type="collapse">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list w-4 h-4" data-component-name="List" data-component-line="27"><path d="M3 12h.01"></path><path d="M3 18h.01"></path><path d="M3 6h.01"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M8 6h13"></path></svg>
+            <h3 class="font-semibold">Entities List</h3>
+        </div>
+        <div class="space-y-4">
+            <div>
+                <h4 class="font-medium mb-2">Receivers</h4>
+                <div id="divrec">
+                    <p class="text-sm text-gray-500">No receivers placed</p>
+                </div>
+            </div>
+            <div>
+                <h4 class="font-medium mb-2">Zones</h4>
+                <div id="divzones">
+                    <p class="text-sm text-gray-500">No zones drawn</p>
+                </div>
+            </div>
+            <div>
+                <p id="scaleok" class="text-sm items-center justify-between text-gray-500 space-y-2 flex" style="display: none">Scale set
+                    <svg width="24px" height="24px" fill="green" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 24 24" xml:space="preserve">
+                        <path d="M12,2C6.5,2,2,6.5,2,12s4.5,10,10,10s10-4.5,10-10S17.5,2,12,2z M10.8,16.8l-3.7-3.7l1.4-1.4l2.2,2.2l5.8-6.1L18,9.3L10.8,16.8z"/>
+                </p>
+
+                <p id="scalenok" class="text-sm items-center justify-between text-gray-500 space-y-2 flex" style="display: none">Scale not set
+                    <svg fill="red" width="24px" height="24px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M16 29c-7.18 0-13-5.82-13-13s5.82-13 13-13 13 5.82 13 13-5.82 13-13 13zM21.961 12.209c0.244-0.244 0.244-0.641 0-0.885l-1.328-1.327c-0.244-0.244-0.641-0.244-0.885 0l-3.761 3.761-3.761-3.761c-0.244-0.244-0.641-0.244-0.885 0l-1.328 1.327c-0.244 0.244-0.244 0.641 0 0.885l3.762 3.762-3.762 3.76c-0.244 0.244-0.244 0.641 0 0.885l1.328 1.328c0.244 0.244 0.641 0.244 0.885 0l3.761-3.762 3.761 3.762c0.244 0.244 0.641 0.244 0.885 0l1.328-1.328c0.244-0.244 0.244-0.641 0-0.885l-3.762-3.76 3.762-3.762z"></path>
+                    </svg>
+                </p>
+                
+
+            </div>
+            <div id="message"></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
