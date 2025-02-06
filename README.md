@@ -170,6 +170,12 @@ This project was generated from [@oncleben31](https://github.com/oncleben31)'s [
 Code template was mainly taken from [@Ludeeus](https://github.com/ludeeus)'s [integration_blueprint][integration_blueprint] template
 [Cookiecutter User Guide](https://cookiecutter-homeassistant-custom-component.readthedocs.io/en/stable/quickstart.html)\*\*
 
+## Say thanks
+
+If you found this helpful and you'd like to say thanks you can do so via buy me a coffee or a beer.
+I've put a bunch of time into this integration and it always puts a smile on my face when people say thanks!
+
+<a href="https://www.buymeacoffee.com/hogster" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="60" width="217"></a>
 ---
 
 [integration_blueprint]: https://github.com/custom-components/integration_blueprint
