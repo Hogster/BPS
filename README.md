@@ -55,7 +55,7 @@ Bermuda aims to let you track any bluetooth device, and have Homeassistant tell 
   I can from my own experience add NS Panel since I use them all around the house as replacement for wall switches and thus get great coverage.
 
 
-- Install BPS via HACS: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=agittins&repository=bermuda&category=Integration)
+- Install BPS via HACS: [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Hogster&repository=BPS&category=Integration)
 
 ## Documentation and help - the Wiki
 
