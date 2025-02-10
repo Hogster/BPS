@@ -8,6 +8,6 @@
     "integration_type": "device",
     "iot_class": "calculated",
     "issue_tracker": "https://github.com/Hogster/BPS/issues",
-    "requirements": ["aiofiles>=23.1.0", "numpy>=2.0.0", "scipy>=1.14.0", "shapely>=2.0.0"],
+    "requirements": ["aiofiles>=23.1.0", "numpy>=1.26.4", "scipy>=1.10.1", "shapely>=2.0.2"],
     "version": "0.0.0"
 }
