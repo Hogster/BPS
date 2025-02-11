@@ -2,7 +2,12 @@
 # BLE Positioning System (BPS)
 A BLE positioning sytem for Homeassistant providing realtime, multi device, floor plan tracking indoors. Dependent on the Bermuda component built by @agattins. 
 
+# Notice:
+There seem to be an issue with running on arm based hardware (e.g. Raspberry Pi) due to lack of ability to load sciPy which is required. However, work is on-going, stay tune!
+
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Hogster&repository=BPS&category=Integration)
+
+Follow the discussion on [Home Assistan Community](https://community.home-assistant.io/t/bps-the-indoor-precise-tracking-system/843429)
 
 - Precisely track your bluetooth devices (indoors) using [bluetooth_proxy] [ESPHome](https://esphome.io/) (https://esphome.io/components/bluetooth_proxy.html) devices in [HomeAssistant](https://home-assistant.io/).
 
