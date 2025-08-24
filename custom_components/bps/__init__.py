@@ -527,7 +527,7 @@ class BPSMapsListAPI(HomeAssistantView):
         try:
             files = [
                 f for f in os.scandir(maps_path) 
-                if f.is_file() and f.name.lower().endswith(('.png', '.jpg'))
+                if f.is_file() and f.name.lower().endswith(('.png', '.jpeg', '.webp', '.jpg'))
             ]
             file_names = [f.name for f in files]
             return web.json_response(file_names)
