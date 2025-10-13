@@ -9,7 +9,7 @@ A BLE positioning sytem for Homeassistant providing realtime, multi device, floo
 
 Follow the discussion on [Home Assistan Community](https://community.home-assistant.io/t/bps-the-indoor-precise-tracking-system/843429)
 
-- Precisely track your bluetooth devices (indoors) using [bluetooth_proxy] [ESPHome](https://esphome.io/) (https://esphome.io/components/bluetooth_proxy.html) devices in [HomeAssistant](https://home-assistant.io/).
+- Precisely track your bluetooth devices (indoors) using [ESPHome](https://esphome.io/) [bluetooth_proxy](https://esphome.io/components/bluetooth_proxy.html) devices in [HomeAssistant](https://home-assistant.io/).
 
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
