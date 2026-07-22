@@ -2,7 +2,10 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 import logging
 import voluptuous as vol
-from . import DOMAIN
+# Import DOMAIN from the lightweight const module, NOT from the package root:
+# `from . import DOMAIN` executes __init__.py (scipy/shapely/numpy/watchdog) just
+# to load the config flow, and couples config-flow loading to those heavy deps.
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 OPTION_SHOW_SIDEBAR_PANEL = "show_sidebar_panel"

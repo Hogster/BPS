@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  release-zip:
+    name: Build and attach bps.zip
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create bps.zip
+        run: |
+          cd custom_components/bps
+          zip -r "${{ github.workspace }}/bps.zip" . -x '*/__pycache__/*' '__pycache__/*'
+
+      - name: Upload bps.zip to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bps.zip

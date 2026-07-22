@@ -1,105 +1,276 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <title>BPS</title>
     <link rel="stylesheet" href="bpsstyle.css">
 </head>
-<body>
-    <div class="container bg-gray-50">
-        <h1 style="font-size: 24px; font-weight: bold;">BLE Positioning System</h1>
-        <div class="flex gap-4 items-center p-1">
-            <div class="flex-1">
-                <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Floor Name</label>
-                <textarea id="mapname" placeholder="Map name" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs"></textarea>
-            </div>
-                <div class="flex-1">
-                    <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Floor Plan Image</label>
-                    <input type="file" id="upload" accept="image/png, image/jpeg" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs">
-                    <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Select existing</label>
-                    <select id="mapSelector" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs">
-                        <option value="">--Please choose an option--</option>
-                    </select>
+<body class="dark">
+    <div class="bps-app">
+        <nav class="bps-tabs" role="tablist">
+            <button type="button" class="bps-tab active" data-tab="map" role="tab">Map &amp; Setup</button>
+            <button type="button" class="bps-tab" data-tab="calibration" role="tab">Receiver Calibration</button>
+            <button type="button" class="bps-tab" data-tab="debugging" role="tab">Debugging</button>
+            <button type="button" id="themeToggle" class="bps-theme-toggle" title="Toggle light / dark theme" aria-label="Toggle theme">🌙</button>
+        </nav>
+
+        <!-- ============================ MAP & SETUP ============================ -->
+        <section class="bps-tabpanel active" data-tabpanel="map">
+            <div class="bps-main">
+                <div class="bps-content">
+                    <div class="bps-setup-row">
+                        <div class="bps-setup-col">
+                            <div class="bps-col-title">Floor</div>
+                            <div class="bps-field-row">
+                                <div class="bps-field">
+                                    <label class="bps-label">Floor name</label>
+                                    <textarea id="mapname" placeholder="e.g. Ground floor" class="bps-input" rows="1"></textarea>
+                                </div>
+                                <div class="bps-field">
+                                    <label class="bps-label">Select existing</label>
+                                    <select id="mapSelector" class="bps-input">
+                                        <option value="">-- Please choose an option --</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="bps-field-row">
+                                <div class="bps-field">
+                                    <label class="bps-label">Floor plan image</label>
+                                    <input type="file" id="upload" accept="image/png, image/jpeg" class="bps-input">
+                                </div>
+                                <div class="bps-field">
+                                    <label class="bps-label">View</label>
+                                    <div class="bps-viewrow">
+                                        <label class="bps-switch">
+                                            <input type="checkbox" id="moveToggle">
+                                            <span class="bps-slider"></span>
+                                            <span>Move</span>
+                                        </label>
+                                        <span class="tooltip">❓
+                                            <span class="tooltip-text">When on, drag receivers on the map to move them. When off, dragging pans the map and clicking a receiver focuses it (only that receiver and its circle stay visible).</span>
+                                        </span>
+                                        <button type="button" id="gridToggle" class="bps-btn bps-btn-outline">Grid: off</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bps-setup-col">
+                            <div class="bps-col-title">Tools</div>
+                            <div class="bps-btnrow" id="mapbuttondiv"></div>
+                            <div class="bps-btnrow" id="savebuttondiv"></div>
+                        </div>
+
+                        <div id="trackdiv" class="bps-setup-col" style="display: none">
+                            <div class="bps-col-title">Tracking</div>
+                            <div class="bps-field-row">
+                                <div class="bps-field">
+                                    <label class="bps-label">Add device to track</label>
+                                    <select id="entSelector" class="bps-input">
+                                        <option value="">-- Please choose an option --</option>
+                                    </select>
+                                </div>
+                                <div class="bps-field">
+                                    <label class="bps-label">Tracker icon</label>
+                                    <select id="trackerIconSelector" class="bps-input">
+                                        <option value="/bps/person.svg">Person</option>
+                                        <option value="/bps/beacon.svg">Beacon</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="bps-field">
+                                <label class="bps-label">Upload icon</label>
+                                <div class="bps-viewrow">
+                                    <input type="file" id="trackerIconUpload" accept="image/png, image/jpeg, image/webp, image/svg+xml" class="bps-input">
+                                    <button type="button" id="uploadTrackerIcon" class="bps-btn bps-btn-outline">Upload</button>
+                                </div>
+                            </div>
+                            <!-- Colour-coded list of the devices being tracked. Each row's
+                                 swatch matches that device's on-map icon, circles and path;
+                                 click a row to make the tracker-icon controls target it, × to
+                                 stop tracking it. Populated by renderTrackLegend(). -->
+                            <div id="trackLegend" class="bps-track-legend" style="display: none"></div>
+                            <div class="bps-viewrow">
+                                <!-- Unlike the two tracking-session toggles below, receiver
+                                     distances need no session — they compare the latest
+                                     calibration matrix against the map, so this shows whenever
+                                     the Tracking column does. -->
+                                <span id="recDistControl">
+                                    <label class="bps-switch">
+                                        <input type="checkbox" id="recDistToggle">
+                                        <span class="bps-slider"></span>
+                                        <span>Receiver distances</span>
+                                    </label>
+                                    <span class="tooltip">❓
+                                        <span class="tooltip-text">Lines link receivers that measure each other. Colour = distance error (see legend); grey dashed = moved, recalibrate. Hover a line or receiver to read its detected (real) distance. The options below limit the count, filter by colour, and switch the detected distance between calibrated and raw. Click a line/pill to isolate, a receiver for its links. When both receivers have a mount height set (ruler button in the sidebar), the real distance is the true 3D distance between them.</span>
+                                    </span>
+                                </span>
+                                <!-- Distance lines only make sense while tracking, so this control
+                                     is revealed (and thus toggleable) only during an active session. -->
+                                <span id="circleControl" style="display: none">
+                                    <label class="bps-switch">
+                                        <input type="checkbox" id="circleToggle">
+                                        <span class="bps-slider"></span>
+                                        <span>Distances</span>
+                                    </label>
+                                    <span class="tooltip">❓
+                                        <span class="tooltip-text">Show each receiver's measured distance to the tracked beacons, with the value on top of each receiver. With one beacon shown, each receiver draws a full distance circle (its own colour) with a thick line to the beacon inside it — where the circles intersect is the beacon. With several beacons the circles would overlap into noise, so each beacon instead shows thin lines to the receivers hearing it, in that beacon's colour. Click a beacon (on the map or in the list above) to isolate it.</span>
+                                    </span>
+                                </span>
+                                <span id="traceControl" style="display: none">
+                                    <label class="bps-switch">
+                                        <input type="checkbox" id="traceToggle">
+                                        <span class="bps-slider"></span>
+                                        <span>Trace path</span>
+                                    </label>
+                                    <span class="tooltip">❓
+                                        <span class="tooltip-text">Draw the path each tracked device has taken since tracking started, in that device's colour — brighter is more recent. The traces clear when a new tracking session starts.</span>
+                                    </span>
+                                </span>
+                                <button type="button" id="starttrack" class="bps-btn bps-btn-primary" style="display: none">Start tracking</button>
+                                <button type="button" id="stoptrack" class="bps-btn bps-btn-primary" style="display: none">Stop tracking</button>
+                            </div>
+                            <!-- Options for the Receiver distances overlay, revealed on their own
+                                 indented row only while that toggle is on so the three selectors
+                                 wrap within the column instead of overflowing the Tracking card. -->
+                            <div id="recDistOptions" class="bps-recdist-options" style="display: none">
+                                <select id="recDistCount" class="bps-input" title="How many of each receiver's closest links to draw">
+                                    <option value="0">All links</option>
+                                    <option value="1">Closest 1</option>
+                                    <option value="2">Closest 2</option>
+                                    <option value="3">Closest 3</option>
+                                    <option value="4">Closest 4</option>
+                                    <option value="5">Closest 5</option>
+                                </select>
+                                <select id="recDistColor" class="bps-input" title="Show only links of this calibration colour">
+                                    <option value="all">All colours</option>
+                                    <option value="green">Green — accurate</option>
+                                    <option value="blue">Blue — too short</option>
+                                    <option value="red">Red — too long</option>
+                                    <option value="offcolour">Off — red &amp; blue</option>
+                                </select>
+                                <select id="recDistMode" class="bps-input" title="Which detected distance to show: calibrated (after correction) or raw (uncorrected)">
+                                    <option value="calibrated">Calibrated</option>
+                                    <option value="raw">Raw</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="zonediv" class="bps-zonebar" style="display: none">
+                        <span class="bps-label">Current zone:</span>
+                        <span id="zonevalue" class="bps-zonevalue">xxx</span>
+                        <!-- The tracked device's floor; turns into an off-floor warning
+                             (+ Switch button) when it isn't the floor being viewed. -->
+                        <span id="zonefloor" class="bps-zonefloor"></span>
+                        <button type="button" id="switchFloorBtn" class="bps-btn bps-btn-outline bps-switch-floor" style="display: none"></button>
+                    </div>
+
+                    <!-- Adjust-preview tuning knobs (summary + Snap + Square), a
+                         centered strip ABOVE the map so they don't cover the zones
+                         being adjusted; its ✓ Apply / ✕ Cancel live at the map's
+                         top-left corner with the other tools. Filled/shown by JS. -->
+                    <div id="bpsAdjustControls" class="bps-adjust-controls" style="display: none"></div>
+
+                    <div class="bps-canvas-wrap">
+                        <canvas id="canvas"></canvas>
+                        <!-- Colour-gradient key for the receiver-distances overlay. Shown by
+                             JS only while that overlay is actually drawing; click-through so it
+                             never blocks the map beneath it. -->
+                        <div id="recDistLegend" class="bps-recdist-legend" style="display: none" aria-hidden="true">
+                            <div class="bps-recdist-legend-title">Measured vs real distance</div>
+                            <div class="bps-recdist-legend-bar"></div>
+                            <div class="bps-recdist-legend-scale"><span>too short</span><span>accurate</span><span>too long</span></div>
+                            <div class="bps-recdist-legend-note"><span class="bps-recdist-legend-dash"></span>moved since calibration — recalibrate</div>
+                        </div>
+                        <button type="button" id="viewReset" title="Reset zoom and position">⤢ Reset view</button>
+                        <!-- Save/Cancel for the active layout tool, pinned to the map's
+                             top-left. Shown only while a tool is active; the tool buttons
+                             themselves keep their label and just start the tool. -->
+                        <div id="mapToolActions" style="display: none">
+                            <button type="button" id="saveToolBtn" title="Save current tool">✓ Save</button>
+                            <button type="button" id="cancelToolBtn" title="Cancel current tool (Esc)">✕ Cancel</button>
+                        </div>
+                    </div>
                 </div>
+
+                <aside class="bps-sidebar">
+                    <div class="bps-sidebar-head">
+                        <h3>Zones &amp; Receivers</h3>
+                        <!-- Turns every zone's colour on/off at once. -->
+                        <button type="button" id="zoneColorsToggle" class="bps-btn bps-btn-outline" style="display: none">Colours: on</button>
+                    </div>
+                    <div id="entitytree">
+                        <p class="bps-empty">Select a floor to see its zones and receivers.</p>
+                    </div>
+                    <!-- Naming-mismatch warnings (issue #64): placed receivers with no
+                         Bermuda sensor, and scanners reporting a distance but unplaced. -->
+                    <div id="scannerissues"></div>
+                    <!-- Compact "not reporting" heads-up (issue #64): placed receivers on
+                         this floor that are linked but have no distance right now (names
+                         only). Full per-entity linking detail lives in the Debugging tab. -->
+                    <div id="scannerlinking" class="bps-linking"></div>
+                    <p class="bps-hint">Enable “Move receivers”, drag one on the map, then Save Floor Plan.</p>
+                    <div class="bps-scale-status">
+                        <p id="scaleok" class="bps-scale-line" style="display: none">Scale set
+                            <svg width="18" height="18" fill="hsl(142 71% 45%)" viewBox="0 0 24 24"><path d="M12,2C6.5,2,2,6.5,2,12s4.5,10,10,10s10-4.5,10-10S17.5,2,12,2z M10.8,16.8l-3.7-3.7l1.4-1.4l2.2,2.2l5.8-6.1L18,9.3L10.8,16.8z"/></svg>
+                        </p>
+                        <p id="scalenok" class="bps-scale-line" style="display: none">Scale not set
+                            <svg width="18" height="18" fill="hsl(0 84% 60%)" viewBox="0 0 32 32"><path d="M16 29c-7.18 0-13-5.82-13-13s5.82-13 13-13 13 5.82 13 13-5.82 13-13 13zM21.961 12.209c0.244-0.244 0.244-0.641 0-0.885l-1.328-1.327c-0.244-0.244-0.641-0.244-0.885 0l-3.761 3.761-3.761-3.761c-0.244-0.244-0.641-0.244-0.885 0l-1.328 1.327c-0.244 0.244-0.244 0.641 0 0.885l3.762 3.762-3.762 3.76c-0.244 0.244-0.244 0.641 0 0.885l1.328 1.328c0.244 0.244 0.641 0.244 0.885 0l3.761-3.762 3.761 3.762c0.244 0.244 0.641 0.244 0.885 0l1.328-1.328c0.244-0.244 0.244-0.641 0-0.885l-3.762-3.76 3.762-3.762z"/></svg>
+                        </p>
+                    </div>
+                    <div id="message"></div>
+                </aside>
             </div>
-        
-        <div class="flex gap-2 items-center p-1">
-            <div class="flex gap-2" id="mapbuttondiv"></div>
-        </div>
-        <div class="flex gap-2 items-center p-1">
-            <div class="flex gap-2" id="savebuttondiv"></div>
-        </div>
-        <div id="trackdiv" style="display: none" class="flex gap-2 items-center p-1">
-            <div class="flex gap-2">
-                <select id="entSelector" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs">
-                    <option value="">--Please choose an option--</option>
-                </select>
-                <select id="trackerIconSelector" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs">
-                    <option value="/bps/person.svg">Person</option>
-                    <option value="/bps/beacon.svg">Beacon</option>
-                </select>
-                <input type="file" id="trackerIconUpload" accept="image/png, image/jpeg, image/webp, image/svg+xml" class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm max-w-xs">
-                <button type="button" id="uploadTrackerIcon" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2">
-                    Upload tracker icon
-                </button>
-                <div class="flex gap-2 items-center p-1">
-                    <input type="checkbox" id="myCheckbox">
-                    <label style="white-space: nowrap" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" for="myCheckbox">Real time track</label>
+        </section>
+
+        <!-- ============================ CALIBRATION ============================ -->
+        <section class="bps-tabpanel" data-tabpanel="calibration">
+            <div id="calibrationdiv" class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Receiver Calibration</h3>
                     <span class="tooltip">❓
-                        <span class="tooltip-text">Real time tracking uses your current Home Assistant session.</span>
+                        <span class="tooltip-text">Compares the distances receivers measure between each other (each probe advertises an iBeacon) with their placed positions, and fits a per-receiver distance correction. Select the floor first, then sample while the house is quiet.</span>
                     </span>
                 </div>
-                <button style="display: none" type="button" id="starttrack" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
-                    <svg width="24" height="24" viewBox="0 0 1024 1024" class="icon"  version="1.1" xmlns="http://www.w3.org/2000/svg" fill="white" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-save w-4 h-4 mr-2" ><path d="M709.485714 277.942857C709.485714 160.914286 614.4 65.828571 497.371429 65.828571S292.571429 160.914286 292.571429 277.942857c0 73.142857 204.8 358.4 204.8 358.4s212.114286-277.942857 212.114285-358.4z" fill="white" /><path d="M497.371429 709.485714l-21.942858-29.257143c-36.571429-51.2-219.428571-307.2-219.428571-387.657142C256 160.914286 365.714286 51.2 497.371429 51.2s241.371429 109.714286 241.371428 241.371429c0 87.771429-182.857143 336.457143-226.742857 387.657142l-14.628571 29.257143z m0-607.085714C394.971429 102.4 307.2 182.857143 307.2 292.571429c0 43.885714 102.4 204.8 190.171429 321.828571C585.142857 497.371429 687.542857 336.457143 687.542857 292.571429c0-109.714286-87.771429-190.171429-190.171428-190.171429z"/><path d="M928.914286 819.2H102.4C58.514286 819.2 14.628571 782.628571 14.628571 731.428571s36.571429-87.771429 87.771429-87.771428h138.971429c14.628571 0 29.257143 14.628571 29.257142 29.257143s-7.314286 29.257143-21.942857 29.257143h-146.285714c-14.628571 0-29.257143 14.628571-29.257143 29.257142s14.628571 29.257143 29.257143 29.257143h819.2c14.628571 0 29.257143 14.628571 29.257143 29.257143s-7.314286 29.257143-21.942857 29.257143z"/><path d="M928.914286 936.228571H226.742857c-14.628571 0-29.257143-14.628571-29.257143-29.257142s14.628571-29.257143 29.257143-29.257143h694.857143c14.628571 0 29.257143-14.628571 29.257143-29.257143s-14.628571-29.257143-29.257143-29.257143H102.4c-14.628571 0-29.257143-14.628571-29.257143-29.257143s14.628571-29.257143 29.257143-29.257143h819.2c43.885714 0 87.771429 36.571429 87.771429 87.771429s-36.571429 87.771429-80.457143 87.771428z"/><path d="M497.371429 263.314286m-80.457143 0a80.457143 80.457143 0 1 0 160.914285 0 80.457143 80.457143 0 1 0-160.914285 0Z"/><path d="M497.371429 365.714286C438.857143 365.714286 394.971429 321.828571 394.971429 263.314286S438.857143 160.914286 497.371429 160.914286s102.4 43.885714 102.4 102.4S555.885714 365.714286 497.371429 365.714286z m0-153.6c-29.257143 0-51.2 21.942857-51.2 51.2s21.942857 51.2 51.2 51.2 51.2-21.942857 51.2-51.2-21.942857-51.2-51.2-51.2z"/></svg>
-                    Start tracking
-                </button>
-                <button style="display: none" type="button" id="stoptrack" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:size-4 [&amp;_svg]:shrink-0 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye w-4 h-4 mr-2"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                    Stop tracking
-                </button>
-            </div>
-        </div>
-        <div style="display: none" id="zonediv" class="flex gap-2 items-center p-1">
-            <label class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">Current zone:</label>
-            <label id="zonevalue" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">xxx</label>
-        </div>
-        <canvas id="canvas"></canvas>
-    </div>
-
-    <div class="fixed right-4 top-4 w-64 bg-white p-4 rounded-lg shadow-lg max-h-[80vh] overflow-y-auto">
-        <div class="flex items-center gap-2 mb-4" data-type="collapse">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list w-4 h-4" data-component-name="List" data-component-line="27"><path d="M3 12h.01"></path><path d="M3 18h.01"></path><path d="M3 6h.01"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M8 6h13"></path></svg>
-            <h3 class="font-semibold">Entities List</h3>
-        </div>
-        <div class="space-y-4">
-            <div>
-                <h4 class="font-medium mb-2">Receivers</h4>
-                <div id="divrec">
-                    <p class="text-sm text-gray-500">No receivers placed</p>
+                <div class="bps-calib-controls">
+                    <label class="bps-switch">
+                        <input type="checkbox" id="calibAuto">
+                        <span class="bps-slider"></span>
+                        <span>Auto calibration</span>
+                    </label>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Continuously samples in the background, re-solves every 15 minutes for every floor, and re-applies corrections whenever they change. Survives Home Assistant restarts.</span>
+                    </span>
+                    <div class="bps-btnrow" id="calibManualControls">
+                        <select id="calibDuration" class="bps-input">
+                            <option value="300">Sample 5 minutes</option>
+                            <option value="600" selected>Sample 10 minutes</option>
+                            <option value="1800">Sample 30 minutes</option>
+                        </select>
+                        <button type="button" id="calibStart" class="bps-btn bps-btn-outline">Start calibration</button>
+                        <button type="button" id="calibCancel" class="bps-btn bps-btn-outline" style="display: none">Cancel</button>
+                        <button type="button" id="calibApply" class="bps-btn bps-btn-primary" style="display: none">Apply corrections</button>
+                        <button type="button" id="calibReset" class="bps-btn bps-btn-outline">Reset corrections</button>
+                    </div>
                 </div>
+                <div id="calibStatus" class="bps-calib-status"></div>
+                <div id="calibResults" class="bps-calib-matrix"></div>
             </div>
-            <div>
-                <h4 class="font-medium mb-2">Zones</h4>
-                <div id="divzones">
-                    <p class="text-sm text-gray-500">No zones drawn</p>
+        </section>
+
+        <!-- ============================ DEBUGGING ============================ -->
+        <section class="bps-tabpanel" data-tabpanel="debugging">
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Receiver linking</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">How each placed receiver maps to its Bermuda distance sensors, and whether each is reporting a distance right now. Use this to tell a real naming mismatch (Unmatched) apart from a receiver that is linked correctly but simply not reporting at the moment (No reading). This is a live snapshot — press Refresh to re-check.</span>
+                    </span>
                 </div>
+                <div id="debuglinking" class="bps-debug"></div>
             </div>
-            <div>
-                <p id="scaleok" class="text-sm items-center justify-between text-gray-500 space-y-2 flex" style="display: none">Scale set
-                    <svg width="24px" height="24px" fill="green" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 24 24" xml:space="preserve">
-                        <path d="M12,2C6.5,2,2,6.5,2,12s4.5,10,10,10s10-4.5,10-10S17.5,2,12,2z M10.8,16.8l-3.7-3.7l1.4-1.4l2.2,2.2l5.8-6.1L18,9.3L10.8,16.8z"/>
-                </p>
-
-                <p id="scalenok" class="text-sm items-center justify-between text-gray-500 space-y-2 flex" style="display: none">Scale not set
-                    <svg fill="red" width="24px" height="24px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M16 29c-7.18 0-13-5.82-13-13s5.82-13 13-13 13 5.82 13 13-5.82 13-13 13zM21.961 12.209c0.244-0.244 0.244-0.641 0-0.885l-1.328-1.327c-0.244-0.244-0.641-0.244-0.885 0l-3.761 3.761-3.761-3.761c-0.244-0.244-0.641-0.244-0.885 0l-1.328 1.327c-0.244 0.244-0.244 0.641 0 0.885l3.762 3.762-3.762 3.76c-0.244 0.244-0.244 0.641 0 0.885l1.328 1.328c0.244 0.244 0.641 0.244 0.885 0l3.761-3.762 3.761 3.762c0.244 0.244 0.641 0.244 0.885 0l1.328-1.328c0.244-0.244 0.244-0.641 0-0.885l-3.762-3.76 3.762-3.762z"></path>
-                    </svg>
-                </p>
-                
-
-            </div>
-            <div id="message"></div>
-        </div>
+        </section>
     </div>
 
     <script src="script.js"></script>
