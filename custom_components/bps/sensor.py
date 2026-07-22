@@ -1,11 +1,68 @@
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.entity import DeviceInfo
 import logging
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "bps_sensors"
+
+# (entity_id suffix / unique_id prefix, display label) per tracked device.
+SENSOR_KINDS = [
+    ("bps_zone", "BPS Zone"),
+    ("bps_floor", "BPS Floor"),
+    ("bps_nearest_zone", "BPS Nearest Zone"),
+    ("bps_sub_zone", "BPS Sub-Zone"),
+]
+
+
+def find_bermuda_via_device(hass, entity):
+    """Identifier of the Bermuda device that owns this tracker's distance_to
+    sensors, so the BPS device can nest under it (via_device). None when it
+    can't be resolved (e.g. Bermuda not loaded yet) — the BPS device then just
+    stands on its own.
+    """
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    prefix = f"sensor.{entity}_distance_to_"
+    for e in ent_reg.entities.values():
+        if e.platform == "bermuda" and e.device_id and e.entity_id.startswith(prefix):
+            dev = dev_reg.async_get(e.device_id)
+            if dev and dev.identifiers:
+                # Prefer a bermuda identifier so the link points at the tracker
+                # device even if it carries identifiers from several integrations.
+                berm = [i for i in dev.identifiers if i[0] == "bermuda"]
+                return berm[0] if berm else next(iter(dev.identifiers))
+    return None
+
+
+def ensure_sensors_for_entity(hass, entity, sensors_cache, new_sensors):
+    """Create any missing BPS sensors for a tracked device.
+
+    Only the in-memory cache decides whether a sensor exists. A registry
+    entry without a live entity object is exactly the situation to recover
+    from: it survives a reboot whenever the previous shutdown could not run
+    the unload cleanly, and skipping creation for it would leave the sensor
+    permanently dead (updates are dropped when the cache has no object).
+    async_add_entities re-claims the registry entry via unique_id.
+    """
+    # Resolve the Bermuda parent (a full entity-registry scan) ONLY when a
+    # sensor actually needs creating. In steady state every sensor is already
+    # cached, so this returns before touching the registry — the old
+    # unconditional scan here ran on every state_changed event and stalled HA
+    # (issue #51).
+    missing = [(suffix, label) for suffix, label in SENSOR_KINDS
+               if f"sensor.{entity}_{suffix}" not in sensors_cache]
+    if not missing:
+        return
+    via_device = find_bermuda_via_device(hass, entity)
+    for suffix, label in missing:
+        entity_id = f"sensor.{entity}_{suffix}"
+        sensor = CustomDistanceSensor(f"{entity} {label}", f"{suffix}_{entity}", entity_id, entity, via_device)
+        sensors_cache[entity_id] = sensor
+        new_sensors.append(sensor)
 
 
 def is_legacy_bps_entity_id(entity_id):
@@ -28,36 +85,66 @@ def is_legacy_bps_entity_id(entity_id):
     return parts[:half] == parts[half:]
 
 def get_filtered_entities(hass):
-    """Fetch and filter sensors based on their entity_id"""
-    sensors = [state for state in hass.states.async_all() if state.entity_id.startswith("sensor.")]
-    filtered = [
-        state.entity_id.replace("sensor.", "").split("_distance_to_")[0]
-        for state in sensors
-        if "_distance_to_" in state.entity_id
-    ]
-    return list(set(filtered))
+    """Tracked-device slugs from Bermuda's per-scanner distance sensors.
+
+    Only entities from the `bermuda` integration count. Other integrations also
+    expose `_distance_to_` sensors (e.g. an ESPHome mmWave presence sensor's
+    `..._distance_to_detection_object`); those aren't trackers and must not get
+    BPS zone/floor sensors or a device.
+    """
+    ent_reg = er.async_get(hass)
+    filtered = set()
+    for state in hass.states.async_all():
+        eid = state.entity_id
+        if not (eid.startswith("sensor.") and "_distance_to_" in eid):
+            continue
+        entry = ent_reg.async_get(eid)
+        if entry is None or entry.platform != "bermuda":
+            continue
+        filtered.add(eid.replace("sensor.", "").split("_distance_to_")[0])
+    return list(filtered)
 
 class CustomDistanceSensor(SensorEntity):
     """A representation of a custom sensor"""
-    def __init__(self, name, unique_id, entity_id):
+    def __init__(self, name, unique_id, entity_id, device_key=None, via_device=None):
         self._name = name
         self._unique_id = unique_id
         self._attr_name = name
         self._attr_unique_id = unique_id
         self._state = "unknown"
+        self._attrs = {}
         self.entity_id = entity_id
-    
+        # Group each tracked device's BPS sensors under their own device rather
+        # than one shared "BLE Positioning System" bucket. All four sensors for
+        # a tracked device share the same identifier, so they land together, and
+        # via_device nests that device under its Bermuda tracker device.
+        if device_key:
+            info = DeviceInfo(
+                identifiers={("bps", device_key)},
+                name=f"{device_key} (BPS)",
+                manufacturer="BPS",
+                model="BLE Positioning System",
+            )
+            if via_device:
+                info["via_device"] = via_device
+            self._attr_device_info = info
+
     @property
     def name(self):
         return self._name
-    
+
     @property
     def unique_id(self):
         return self._unique_id
-    
+
     @property
     def state(self):
         return self._state
+
+    @property
+    def extra_state_attributes(self):
+        # Used by the sub-zone sensor to carry "parent_zone"; empty for the rest.
+        return self._attrs
 
 def cleanup_legacy_bps_entities(hass):
     """Remove old duplicated-name BPS entities from entity registry."""
@@ -92,8 +179,8 @@ def normalize_bps_registry_entity_ids(hass, entities):
     entity_registry = er.async_get(hass)
     expected_by_uid = {}
     for entity in entities:
-        expected_by_uid[f"bps_zone_{entity}"] = f"sensor.{entity}_bps_zone"
-        expected_by_uid[f"bps_floor_{entity}"] = f"sensor.{entity}_bps_floor"
+        for suffix, _label in SENSOR_KINDS:
+            expected_by_uid[f"{suffix}_{entity}"] = f"sensor.{entity}_{suffix}"
 
     for entry in list(entity_registry.entities.values()):
         expected_entity_id = expected_by_uid.get(entry.unique_id)
@@ -162,8 +249,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     expected_entity_ids = set()
     for entity in entities:
-        expected_entity_ids.add(f"sensor.{entity}_bps_zone")
-        expected_entity_ids.add(f"sensor.{entity}_bps_floor")
+        for suffix, _label in SENSOR_KINDS:
+            expected_entity_ids.add(f"sensor.{entity}_{suffix}")
 
     # Remove stale BPS registry entries that are no longer expected.
     entity_registry = er.async_get(hass)
@@ -177,36 +264,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             _LOGGER.info("Removing stale BPS registry entity: %s", entity_id)
             entity_registry.async_remove(entity_id)
 
-    existing_sensors = {
-        entry.entity_id
-        for entry in entity_registry.entities.values()
-        if entry.platform == "bps"
-    }
-
     new_sensors = []
     for entity in entities:
-        unique_zone_id = f"sensor.{entity}_bps_zone"
-        unique_zone_uid = f"bps_zone_{entity}"
-        unique_floor_id = f"sensor.{entity}_bps_floor"
-        unique_floor_uid = f"bps_floor_{entity}"
-
-        zone_exists = (
-            any(s.startswith(unique_zone_id) for s in existing_sensors)
-            or unique_zone_id in hass.data["bps_sensors"]
-        )
-        if not zone_exists:
-            sensor = CustomDistanceSensor(f"{entity} BPS Zone", unique_zone_uid, unique_zone_id)
-            hass.data["bps_sensors"][unique_zone_id] = sensor
-            new_sensors.append(sensor)
-
-        floor_exists = (
-            any(s.startswith(unique_floor_id) for s in existing_sensors)
-            or unique_floor_id in hass.data["bps_sensors"]
-        )
-        if not floor_exists:
-            sensor = CustomDistanceSensor(f"{entity} BPS Floor", unique_floor_uid, unique_floor_id)
-            hass.data["bps_sensors"][unique_floor_id] = sensor
-            new_sensors.append(sensor)
+        ensure_sensors_for_entity(hass, entity, hass.data["bps_sensors"], new_sensors)
 
     if new_sensors:
         async_add_entities(new_sensors, update_before_add=True)
@@ -214,45 +274,31 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     @callback
     def state_changed_listener(event):
-        """Listen for state changes to update dynamic sensors"""
+        """Create BPS sensors when a NEW distance sensor appears.
+
+        This is bound to the GLOBAL state bus, so it fires for every entity's
+        every state change in all of HA (the busiest event there is). It must be
+        O(1) for the overwhelming majority of those events. Only a newly-ADDED
+        ``sensor.*_distance_to_*`` entity (``old_state`` is None) can introduce a
+        new tracker; the constant value-updates of existing distance sensors and
+        every unrelated entity are skipped cheaply. Without this filter the
+        handler ran a full states + entity-registry scan on every state change
+        and stalled the event loop (issue #51).
+        """
         sensors_cache = hass.data.get("bps_sensors")
         if sensors_cache is None:
             # Integration is unloading/reloading; ignore late state events.
             return
 
+        entity_id = event.data.get("entity_id") or ""
+        if "_distance_to_" not in entity_id or event.data.get("old_state") is not None:
+            return
+
         new_entities = get_filtered_entities(hass)
         new_sensors = []
 
-        entity_registry = er.async_get(hass)
-        existing_sensors = {
-            entry.entity_id
-            for entry in entity_registry.entities.values()
-            if entry.platform == "bps"
-        }
-
         for entity in new_entities:
-            unique_zone_id = f"sensor.{entity}_bps_zone"
-            unique_zone_uid = f"bps_zone_{entity}"
-            unique_floor_id = f"sensor.{entity}_bps_floor"
-            unique_floor_uid = f"bps_floor_{entity}"
-
-            zone_exists = (
-                any(s.startswith(unique_zone_id) for s in existing_sensors)
-                or unique_zone_id in sensors_cache
-            )
-            if not zone_exists:
-                sensor = CustomDistanceSensor(f"{entity} BPS Zone", unique_zone_uid, unique_zone_id)
-                sensors_cache[unique_zone_id] = sensor
-                new_sensors.append(sensor)
-
-            floor_exists = (
-                any(s.startswith(unique_floor_id) for s in existing_sensors)
-                or unique_floor_id in sensors_cache
-            )
-            if not floor_exists:
-                sensor = CustomDistanceSensor(f"{entity} BPS Floor", unique_floor_uid, unique_floor_id)
-                sensors_cache[unique_floor_id] = sensor
-                new_sensors.append(sensor)
+            ensure_sensors_for_entity(hass, entity, sensors_cache, new_sensors)
 
         if new_sensors:
             async_add_entities(new_sensors, update_before_add=True)

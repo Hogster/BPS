@@ -6,18 +6,26 @@
 
 .tooltip .tooltip-text {
     visibility: hidden;
-    width: 200px;
+    width: 280px;
     background-color: black;
     color: #fff;
     text-align: center;
     padding: 5px;
     border-radius: 5px;
-    
+
     /* Positionering */
     position: absolute;
-    bottom: 125%; /* Placera ovanför */
+    z-index: 1000; /* above the matrix's transformed diagonal headers */
+    top: 125%; /* below the icon, so it isn't clipped at the top of the page */
     left: 50%;
     transform: translateX(-50%);
+    /* A help text must never run off the viewport. Positioning is handled by
+       the .flip-up JS (opens the tip above the icon when there's no room
+       below); this height cap + inner scroll is the belt-and-braces so an
+       unusually long tip can't exceed the screen either way. The text-span is
+       a child of .tooltip, so hovering onto it keeps the tip open to scroll. */
+    max-height: 60vh;
+    overflow-y: auto;
     opacity: 0;
     transition: opacity 0.3s;
 }
@@ -25,6 +33,14 @@
 .tooltip:hover .tooltip-text {
     visibility: visible;
     opacity: 1;
+}
+
+/* Open upward instead of downward. JS adds .flip-up on hover when a downward
+   tip would run past the bottom of the viewport (the Tracking / Calibration
+   controls sit low in the panel, so their tips need to open above). */
+.tooltip.flip-up .tooltip-text {
+    top: auto;
+    bottom: 125%;
 }
 
 .container {
@@ -50,12 +66,146 @@ canvas {
     border-width: 2px;
     border-radius: 8px;
 }
+.zone-cancel-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    line-height: 1;
+    border: none;
+    border-radius: 50%;
+    background: #d32f2f;
+    color: #ffffff;
+    font-size: 13px;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    z-index: 1000;
+}
+.zone-cancel-btn:hover { background: #b71c1c; }
+/* Receiver-picker cancel X: pinned to the picker box's top-right corner. */
+.rec-cancel-btn { position: absolute; top: -8px; right: -8px; }
+
+/* In-window dialogs (replace native alert/confirm) */
+.bps-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.bps-modal {
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    padding: 20px;
+    width: min(380px, calc(100% - 40px));
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.bps-modal-msg { font-size: 14px; line-height: 1.5; margin-bottom: 18px; }
+.bps-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+/* Numeric input of bpsPromptNumber (receiver mount height). */
+.bps-modal-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 18px;
+    padding: 8px 10px;
+    font-size: 14px;
+    color: hsl(var(--foreground));
+    background: hsl(var(--background));
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+}
+.bps-btn-danger { background: #d32f2f; color: #ffffff; }
+.bps-btn-danger:hover { background: #b71c1c; }
+.bps-toast-host {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    /* Above .bps-modal-overlay (2000): modal validation toasts must not
+       render dimmed underneath the backdrop. */
+    z-index: 2100;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    pointer-events: none;
+}
+.bps-toast {
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    max-width: 90vw;
+    opacity: 1;
+    transition: opacity 0.35s ease;
+}
+.bps-toast-out { opacity: 0; }
+/* Adjust preview: ✓ Apply / ✕ Cancel pinned to the map's top-left corner,
+   exactly where the layout tools show ✓ Save / ✕ Cancel (the two can't coexist:
+   starting either cancels an open adjust preview via buttonreset). The tuning
+   knobs live in .bps-adjust-controls, a separate strip above the map. */
+.bps-adjust-actions {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 20;
+    display: flex;
+    gap: 8px;
+}
+.bps-adjust-actions button {
+    padding: 6px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border-radius: 8px;
+    background: hsl(var(--background) / 0.92);
+    cursor: pointer;
+}
+#bpsAdjustApply { border: 1px solid hsl(142 71% 40%); color: hsl(142 71% 32%); }
+#bpsAdjustApply:hover { background: hsl(142 71% 40%); color: #fff; }
+#bpsAdjustCancel { border: 1px solid hsl(0 84% 60%); color: hsl(0 84% 55%); }
+#bpsAdjustCancel:hover { background: hsl(0 84% 60%); color: #fff; }
+
+/* Adjust tuning knobs: a centered pill ABOVE the map (between the setup cards
+   and the canvas), out of the way of the zones being adjusted. margin:auto
+   centers it; the whole thing hides when no preview is open. */
+.bps-adjust-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    width: fit-content;
+    max-width: 100%;
+    margin: 10px auto 0;
+    padding: 8px 14px;
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    border: 1px solid hsl(var(--border));
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+    font-size: 13px;
+}
+.bps-adjust-summary { font-weight: 500; color: hsl(var(--muted-foreground)); }
+.bps-adjust-ctl { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
 .rec-input {
     padding: 2px;
     border-color: #000000;
     border-style: solid;
     border-width: 2px;
     border-radius: 8px;
+    background-color: #ffffff;
+}
+.rec-input-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 320px;
 }
 
 *,:before,:after {
@@ -2454,3 +2604,730 @@ body {
 }
 
 .data-\[selected\=\'true\'\]\:bg-accent[data-selected=true]{background-color:hsl(var(--accent))}.data-\[state\=active\]\:bg-background[data-state=active]{background-color:hsl(var(--background))}.data-\[state\=checked\]\:bg-primary[data-state=checked]{background-color:hsl(var(--primary))}.data-\[state\=on\]\:bg-accent[data-state=on],.data-\[state\=open\]\:bg-accent[data-state=open]{background-color:hsl(var(--accent))}.data-\[state\=open\]\:bg-accent\/50[data-state=open]{background-color:hsl(var(--accent) / .5)}.data-\[state\=open\]\:bg-secondary[data-state=open]{background-color:hsl(var(--secondary))}.data-\[state\=selected\]\:bg-muted[data-state=selected]{background-color:hsl(var(--muted))}.data-\[state\=unchecked\]\:bg-input[data-state=unchecked]{background-color:hsl(var(--input))}.data-\[active\=true\]\:font-medium[data-active=true]{font-weight:500}.data-\[active\=true\]\:text-sidebar-accent-foreground[data-active=true]{color:hsl(var(--sidebar-accent-foreground))}.data-\[selected\=true\]\:text-accent-foreground[data-selected=true]{color:hsl(var(--accent-foreground))}.data-\[state\=active\]\:text-foreground[data-state=active]{color:hsl(var(--foreground))}.data-\[state\=checked\]\:text-primary-foreground[data-state=checked]{color:hsl(var(--primary-foreground))}.data-\[state\=on\]\:text-accent-foreground[data-state=on],.data-\[state\=open\]\:text-accent-foreground[data-state=open]{color:hsl(var(--accent-foreground))}.data-\[state\=open\]\:text-muted-foreground[data-state=open]{color:hsl(var(--muted-foreground))}.data-\[disabled\=true\]\:opacity-50[data-disabled=true],.data-\[disabled\]\:opacity-50[data-disabled]{opacity:.5}.data-\[state\=open\]\:opacity-100[data-state=open]{opacity:1}.data-\[state\=active\]\:shadow-sm[data-state=active]{--tw-shadow: 0 1px 2px 0 rgb(0 0 0 / .05);--tw-shadow-colored: 0 1px 2px 0 var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000),var(--tw-ring-shadow, 0 0 #0000),var(--tw-shadow)}.data-\[swipe\=move\]\:transition-none[data-swipe=move]{transition-property:none}.data-\[state\=closed\]\:duration-300[data-state=closed]{transition-duration:.3s}.data-\[state\=open\]\:duration-500[data-state=open]{transition-duration:.5s}.data-\[motion\^\=from-\]\:animate-in[data-motion^=from-],.data-\[state\=open\]\:animate-in[data-state=open],.data-\[state\=visible\]\:animate-in[data-state=visible]{animation-name:enter;animation-duration:.15s;--tw-enter-opacity: initial;--tw-enter-scale: initial;--tw-enter-rotate: initial;--tw-enter-translate-x: initial;--tw-enter-translate-y: initial}.data-\[motion\^\=to-\]\:animate-out[data-motion^=to-],.data-\[state\=closed\]\:animate-out[data-state=closed],.data-\[state\=hidden\]\:animate-out[data-state=hidden],.data-\[swipe\=end\]\:animate-out[data-swipe=end]{animation-name:exit;animation-duration:.15s;--tw-exit-opacity: initial;--tw-exit-scale: initial;--tw-exit-rotate: initial;--tw-exit-translate-x: initial;--tw-exit-translate-y: initial}.data-\[motion\^\=from-\]\:fade-in[data-motion^=from-]{--tw-enter-opacity: 0}.data-\[motion\^\=to-\]\:fade-out[data-motion^=to-],.data-\[state\=closed\]\:fade-out-0[data-state=closed]{--tw-exit-opacity: 0}.data-\[state\=closed\]\:fade-out-80[data-state=closed]{--tw-exit-opacity: .8}.data-\[state\=hidden\]\:fade-out[data-state=hidden]{--tw-exit-opacity: 0}.data-\[state\=open\]\:fade-in-0[data-state=open],.data-\[state\=visible\]\:fade-in[data-state=visible]{--tw-enter-opacity: 0}.data-\[state\=closed\]\:zoom-out-95[data-state=closed]{--tw-exit-scale: .95}.data-\[state\=open\]\:zoom-in-90[data-state=open]{--tw-enter-scale: .9}.data-\[state\=open\]\:zoom-in-95[data-state=open]{--tw-enter-scale: .95}.data-\[motion\=from-end\]\:slide-in-from-right-52[data-motion=from-end]{--tw-enter-translate-x: 13rem}.data-\[motion\=from-start\]\:slide-in-from-left-52[data-motion=from-start]{--tw-enter-translate-x: -13rem}.data-\[motion\=to-end\]\:slide-out-to-right-52[data-motion=to-end]{--tw-exit-translate-x: 13rem}.data-\[motion\=to-start\]\:slide-out-to-left-52[data-motion=to-start]{--tw-exit-translate-x: -13rem}.data-\[side\=bottom\]\:slide-in-from-top-2[data-side=bottom]{--tw-enter-translate-y: -.5rem}.data-\[side\=left\]\:slide-in-from-right-2[data-side=left]{--tw-enter-translate-x: .5rem}.data-\[side\=right\]\:slide-in-from-left-2[data-side=right]{--tw-enter-translate-x: -.5rem}.data-\[side\=top\]\:slide-in-from-bottom-2[data-side=top]{--tw-enter-translate-y: .5rem}.data-\[state\=closed\]\:slide-out-to-bottom[data-state=closed]{--tw-exit-translate-y: 100%}.data-\[state\=closed\]\:slide-out-to-left[data-state=closed]{--tw-exit-translate-x: -100%}.data-\[state\=closed\]\:slide-out-to-left-1\/2[data-state=closed]{--tw-exit-translate-x: -50%}.data-\[state\=closed\]\:slide-out-to-right[data-state=closed],.data-\[state\=closed\]\:slide-out-to-right-full[data-state=closed]{--tw-exit-translate-x: 100%}.data-\[state\=closed\]\:slide-out-to-top[data-state=closed]{--tw-exit-translate-y: -100%}.data-\[state\=closed\]\:slide-out-to-top-\[48\%\][data-state=closed]{--tw-exit-translate-y: -48%}.data-\[state\=open\]\:slide-in-from-bottom[data-state=open]{--tw-enter-translate-y: 100%}.data-\[state\=open\]\:slide-in-from-left[data-state=open]{--tw-enter-translate-x: -100%}.data-\[state\=open\]\:slide-in-from-left-1\/2[data-state=open]{--tw-enter-translate-x: -50%}.data-\[state\=open\]\:slide-in-from-right[data-state=open]{--tw-enter-translate-x: 100%}.data-\[state\=open\]\:slide-in-from-top[data-state=open]{--tw-enter-translate-y: -100%}.data-\[state\=open\]\:slide-in-from-top-\[48\%\][data-state=open]{--tw-enter-translate-y: -48%}.data-\[state\=open\]\:slide-in-from-top-full[data-state=open]{--tw-enter-translate-y: -100%}.data-\[state\=closed\]\:duration-300[data-state=closed]{animation-duration:.3s}.data-\[state\=open\]\:duration-500[data-state=open]{animation-duration:.5s}.data-\[panel-group-direction\=vertical\]\:after\:left-0[data-panel-group-direction=vertical]:after{content:var(--tw-content);left:0}.data-\[panel-group-direction\=vertical\]\:after\:h-1[data-panel-group-direction=vertical]:after{content:var(--tw-content);height:.25rem}.data-\[panel-group-direction\=vertical\]\:after\:w-full[data-panel-group-direction=vertical]:after{content:var(--tw-content);width:100%}.data-\[panel-group-direction\=vertical\]\:after\:-translate-y-1\/2[data-panel-group-direction=vertical]:after{content:var(--tw-content);--tw-translate-y: -50%;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skew(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.data-\[panel-group-direction\=vertical\]\:after\:translate-x-0[data-panel-group-direction=vertical]:after{content:var(--tw-content);--tw-translate-x: 0px;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skew(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.data-\[state\=open\]\:hover\:bg-sidebar-accent:hover[data-state=open]{background-color:hsl(var(--sidebar-accent))}.data-\[state\=open\]\:hover\:text-sidebar-accent-foreground:hover[data-state=open]{color:hsl(var(--sidebar-accent-foreground))}.group[data-collapsible=offcanvas] .group-data-\[collapsible\=offcanvas\]\:left-\[calc\(var\(--sidebar-width\)\*-1\)\]{left:calc(var(--sidebar-width) * -1)}.group[data-collapsible=offcanvas] .group-data-\[collapsible\=offcanvas\]\:right-\[calc\(var\(--sidebar-width\)\*-1\)\]{right:calc(var(--sidebar-width) * -1)}.group[data-side=left] .group-data-\[side\=left\]\:-right-4{right:-1rem}.group[data-side=right] .group-data-\[side\=right\]\:left-0{left:0}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:-mt-8{margin-top:-2rem}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:hidden{display:none}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:\!size-8{width:2rem!important;height:2rem!important}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:w-\[--sidebar-width-icon\]{width:var(--sidebar-width-icon)}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:w-\[calc\(var\(--sidebar-width-icon\)_\+_theme\(spacing\.4\)\)\]{width:calc(var(--sidebar-width-icon) + 1rem)}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:w-\[calc\(var\(--sidebar-width-icon\)_\+_theme\(spacing\.4\)_\+2px\)\]{width:calc(var(--sidebar-width-icon) + 1rem + 2px)}.group[data-collapsible=offcanvas] .group-data-\[collapsible\=offcanvas\]\:w-0{width:0px}.group[data-collapsible=offcanvas] .group-data-\[collapsible\=offcanvas\]\:translate-x-0{--tw-translate-x: 0px;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skew(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.group[data-side=right] .group-data-\[side\=right\]\:rotate-180,.group[data-state=open] .group-data-\[state\=open\]\:rotate-180{--tw-rotate: 180deg;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skew(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:overflow-hidden{overflow:hidden}.group[data-variant=floating] .group-data-\[variant\=floating\]\:rounded-lg{border-radius:var(--radius)}.group[data-variant=floating] .group-data-\[variant\=floating\]\:border{border-width:1px}.group[data-side=left] .group-data-\[side\=left\]\:border-r{border-right-width:1px}.group[data-side=right] .group-data-\[side\=right\]\:border-l{border-left-width:1px}.group[data-variant=floating] .group-data-\[variant\=floating\]\:border-sidebar-border{border-color:hsl(var(--sidebar-border))}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:\!p-0{padding:0!important}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:\!p-2{padding:.5rem!important}.group[data-collapsible=icon] .group-data-\[collapsible\=icon\]\:opacity-0{opacity:0}.group[data-variant=floating] .group-data-\[variant\=floating\]\:shadow{--tw-shadow: 0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1);--tw-shadow-colored: 0 1px 3px 0 var(--tw-shadow-color), 0 1px 2px -1px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000),var(--tw-ring-shadow, 0 0 #0000),var(--tw-shadow)}.group[data-collapsible=offcanvas] .group-data-\[collapsible\=offcanvas\]\:after\:left-full:after{content:var(--tw-content);left:100%}.group[data-collapsible=offcanvas] .group-data-\[collapsible\=offcanvas\]\:hover\:bg-sidebar:hover{background-color:hsl(var(--sidebar-background))}.peer\/menu-button[data-size=default]~.peer-data-\[size\=default\]\/menu-button\:top-1\.5{top:.375rem}.peer\/menu-button[data-size=lg]~.peer-data-\[size\=lg\]\/menu-button\:top-2\.5{top:.625rem}.peer\/menu-button[data-size=sm]~.peer-data-\[size\=sm\]\/menu-button\:top-1{top:.25rem}.peer[data-variant=inset]~.peer-data-\[variant\=inset\]\:min-h-\[calc\(100svh-theme\(spacing\.4\)\)\]{min-height:calc(100svh - 1rem)}.peer\/menu-button[data-active=true]~.peer-data-\[active\=true\]\/menu-button\:text-sidebar-accent-foreground{color:hsl(var(--sidebar-accent-foreground))}.dark\:border-destructive:is(.dark *){border-color:hsl(var(--destructive))}@media (min-width: 640px){.sm\:bottom-0{bottom:0}.sm\:right-0{right:0}.sm\:top-auto{top:auto}.sm\:mt-0{margin-top:0}.sm\:flex{display:flex}.sm\:max-w-sm{max-width:24rem}.sm\:flex-row{flex-direction:row}.sm\:flex-col{flex-direction:column}.sm\:justify-end{justify-content:flex-end}.sm\:gap-2\.5{gap:.625rem}.sm\:space-x-2>:not([hidden])~:not([hidden]){--tw-space-x-reverse: 0;margin-right:calc(.5rem * var(--tw-space-x-reverse));margin-left:calc(.5rem * calc(1 - var(--tw-space-x-reverse)))}.sm\:space-x-4>:not([hidden])~:not([hidden]){--tw-space-x-reverse: 0;margin-right:calc(1rem * var(--tw-space-x-reverse));margin-left:calc(1rem * calc(1 - var(--tw-space-x-reverse)))}.sm\:space-y-0>:not([hidden])~:not([hidden]){--tw-space-y-reverse: 0;margin-top:calc(0px * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(0px * var(--tw-space-y-reverse))}.sm\:rounded-lg{border-radius:var(--radius)}.sm\:text-left{text-align:left}.data-\[state\=open\]\:sm\:slide-in-from-bottom-full[data-state=open]{--tw-enter-translate-y: 100%}}@media (min-width: 768px){.md\:absolute{position:absolute}.md\:block{display:block}.md\:flex{display:flex}.md\:w-\[var\(--radix-navigation-menu-viewport-width\)\]{width:var(--radix-navigation-menu-viewport-width)}.md\:w-auto{width:auto}.md\:max-w-\[420px\]{max-width:420px}.md\:text-sm{font-size:.875rem;line-height:1.25rem}.md\:opacity-0{opacity:0}.after\:md\:hidden:after{content:var(--tw-content);display:none}.peer[data-variant=inset]~.md\:peer-data-\[variant\=inset\]\:m-2{margin:.5rem}.peer[data-state=collapsed][data-variant=inset]~.md\:peer-data-\[state\=collapsed\]\:peer-data-\[variant\=inset\]\:ml-2{margin-left:.5rem}.peer[data-variant=inset]~.md\:peer-data-\[variant\=inset\]\:ml-0{margin-left:0}.peer[data-variant=inset]~.md\:peer-data-\[variant\=inset\]\:rounded-xl{border-radius:.75rem}.peer[data-variant=inset]~.md\:peer-data-\[variant\=inset\]\:shadow{--tw-shadow: 0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1);--tw-shadow-colored: 0 1px 3px 0 var(--tw-shadow-color), 0 1px 2px -1px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000),var(--tw-ring-shadow, 0 0 #0000),var(--tw-shadow)}}.\[\&\:has\(\[aria-selected\]\)\]\:bg-accent:has([aria-selected]){background-color:hsl(var(--accent))}.first\:\[\&\:has\(\[aria-selected\]\)\]\:rounded-l-md:has([aria-selected]):first-child{border-top-left-radius:calc(var(--radius) - 2px);border-bottom-left-radius:calc(var(--radius) - 2px)}.last\:\[\&\:has\(\[aria-selected\]\)\]\:rounded-r-md:has([aria-selected]):last-child{border-top-right-radius:calc(var(--radius) - 2px);border-bottom-right-radius:calc(var(--radius) - 2px)}.\[\&\:has\(\[aria-selected\]\.day-outside\)\]\:bg-accent\/50:has([aria-selected].day-outside){background-color:hsl(var(--accent) / .5)}.\[\&\:has\(\[aria-selected\]\.day-range-end\)\]\:rounded-r-md:has([aria-selected].day-range-end){border-top-right-radius:calc(var(--radius) - 2px);border-bottom-right-radius:calc(var(--radius) - 2px)}.\[\&\:has\(\[role\=checkbox\]\)\]\:pr-0:has([role=checkbox]){padding-right:0}.\[\&\>button\]\:hidden>button{display:none}.\[\&\>span\:last-child\]\:truncate>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.\[\&\>span\]\:line-clamp-1>span{overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1}.\[\&\>svg\+div\]\:translate-y-\[-3px\]>svg+div{--tw-translate-y: -3px;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skew(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.\[\&\>svg\]\:absolute>svg{position:absolute}.\[\&\>svg\]\:left-4>svg{left:1rem}.\[\&\>svg\]\:top-4>svg{top:1rem}.\[\&\>svg\]\:size-3\.5>svg{width:.875rem;height:.875rem}.\[\&\>svg\]\:size-4>svg{width:1rem;height:1rem}.\[\&\>svg\]\:h-2\.5>svg{height:.625rem}.\[\&\>svg\]\:h-3>svg{height:.75rem}.\[\&\>svg\]\:w-2\.5>svg{width:.625rem}.\[\&\>svg\]\:w-3>svg{width:.75rem}.\[\&\>svg\]\:shrink-0>svg{flex-shrink:0}.\[\&\>svg\]\:text-destructive>svg{color:hsl(var(--destructive))}.\[\&\>svg\]\:text-foreground>svg{color:hsl(var(--foreground))}.\[\&\>svg\]\:text-muted-foreground>svg{color:hsl(var(--muted-foreground))}.\[\&\>svg\]\:text-sidebar-accent-foreground>svg{color:hsl(var(--sidebar-accent-foreground))}.\[\&\>svg\~\*\]\:pl-7>svg~*{padding-left:1.75rem}.\[\&\>tr\]\:last\:border-b-0:last-child>tr{border-bottom-width:0px}.\[\&\[data-panel-group-direction\=vertical\]\>div\]\:rotate-90[data-panel-group-direction=vertical]>div{--tw-rotate: 90deg;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skew(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.\[\&\[data-state\=open\]\>svg\]\:rotate-180[data-state=open]>svg{--tw-rotate: 180deg;transform:translate(var(--tw-translate-x),var(--tw-translate-y)) rotate(var(--tw-rotate)) skew(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.\[\&_\.recharts-cartesian-axis-tick_text\]\:fill-muted-foreground .recharts-cartesian-axis-tick text{fill:hsl(var(--muted-foreground))}.\[\&_\.recharts-cartesian-grid_line\[stroke\=\'\#ccc\'\]\]\:stroke-border\/50 .recharts-cartesian-grid line[stroke="#ccc"]{stroke:hsl(var(--border) / .5)}.\[\&_\.recharts-curve\.recharts-tooltip-cursor\]\:stroke-border .recharts-curve.recharts-tooltip-cursor{stroke:hsl(var(--border))}.\[\&_\.recharts-dot\[stroke\=\'\#fff\'\]\]\:stroke-transparent .recharts-dot[stroke="#fff"]{stroke:transparent}.\[\&_\.recharts-layer\]\:outline-none .recharts-layer{outline:2px solid transparent;outline-offset:2px}.\[\&_\.recharts-polar-grid_\[stroke\=\'\#ccc\'\]\]\:stroke-border .recharts-polar-grid [stroke="#ccc"]{stroke:hsl(var(--border))}.\[\&_\.recharts-radial-bar-background-sector\]\:fill-muted .recharts-radial-bar-background-sector,.\[\&_\.recharts-rectangle\.recharts-tooltip-cursor\]\:fill-muted .recharts-rectangle.recharts-tooltip-cursor{fill:hsl(var(--muted))}.\[\&_\.recharts-reference-line_\[stroke\=\'\#ccc\'\]\]\:stroke-border .recharts-reference-line [stroke="#ccc"]{stroke:hsl(var(--border))}.\[\&_\.recharts-sector\[stroke\=\'\#fff\'\]\]\:stroke-transparent .recharts-sector[stroke="#fff"]{stroke:transparent}.\[\&_\.recharts-sector\]\:outline-none .recharts-sector,.\[\&_\.recharts-surface\]\:outline-none .recharts-surface{outline:2px solid transparent;outline-offset:2px}.\[\&_\[cmdk-group-heading\]\]\:px-2 [cmdk-group-heading]{padding-left:.5rem;padding-right:.5rem}.\[\&_\[cmdk-group-heading\]\]\:py-1\.5 [cmdk-group-heading]{padding-top:.375rem;padding-bottom:.375rem}.\[\&_\[cmdk-group-heading\]\]\:text-xs [cmdk-group-heading]{font-size:.75rem;line-height:1rem}.\[\&_\[cmdk-group-heading\]\]\:font-medium [cmdk-group-heading]{font-weight:500}.\[\&_\[cmdk-group-heading\]\]\:text-muted-foreground [cmdk-group-heading]{color:hsl(var(--muted-foreground))}.\[\&_\[cmdk-group\]\:not\(\[hidden\]\)_\~\[cmdk-group\]\]\:pt-0 [cmdk-group]:not([hidden])~[cmdk-group]{padding-top:0}.\[\&_\[cmdk-group\]\]\:px-2 [cmdk-group]{padding-left:.5rem;padding-right:.5rem}.\[\&_\[cmdk-input-wrapper\]_svg\]\:h-5 [cmdk-input-wrapper] svg{height:1.25rem}.\[\&_\[cmdk-input-wrapper\]_svg\]\:w-5 [cmdk-input-wrapper] svg{width:1.25rem}.\[\&_\[cmdk-input\]\]\:h-12 [cmdk-input]{height:3rem}.\[\&_\[cmdk-item\]\]\:px-2 [cmdk-item]{padding-left:.5rem;padding-right:.5rem}.\[\&_\[cmdk-item\]\]\:py-3 [cmdk-item]{padding-top:.75rem;padding-bottom:.75rem}.\[\&_\[cmdk-item\]_svg\]\:h-5 [cmdk-item] svg{height:1.25rem}.\[\&_\[cmdk-item\]_svg\]\:w-5 [cmdk-item] svg{width:1.25rem}.\[\&_p\]\:leading-relaxed p{line-height:1.625}.\[\&_svg\]\:pointer-events-none svg{pointer-events:none}.\[\&_svg\]\:size-4 svg{width:1rem;height:1rem}.\[\&_svg\]\:shrink-0 svg{flex-shrink:0}.\[\&_tr\:last-child\]\:border-0 tr:last-child{border-width:0px}.\[\&_tr\]\:border-b tr{border-bottom-width:1px}[data-side=left][data-collapsible=offcanvas] .\[\[data-side\=left\]\[data-collapsible\=offcanvas\]_\&\]\:-right-2{right:-.5rem}[data-side=left][data-state=collapsed] .\[\[data-side\=left\]\[data-state\=collapsed\]_\&\]\:cursor-e-resize{cursor:e-resize}[data-side=left] .\[\[data-side\=left\]_\&\]\:cursor-w-resize{cursor:w-resize}[data-side=right][data-collapsible=offcanvas] .\[\[data-side\=right\]\[data-collapsible\=offcanvas\]_\&\]\:-left-2{left:-.5rem}[data-side=right][data-state=collapsed] .\[\[data-side\=right\]\[data-state\=collapsed\]_\&\]\:cursor-w-resize{cursor:w-resize}[data-side=right] .\[\[data-side\=right\]_\&\]\:cursor-e-resize{cursor:e-resize}
+/* ==== BPS panel: dark theme + modern layout =============================== */
+html, body { height: 100%; }
+body {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+}
+.bps-app { padding: 12px 22px 40px; }
+.bps-header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 12px;
+}
+
+/* Tabs */
+.bps-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid hsl(var(--border));
+    margin-bottom: 14px;
+}
+.bps-theme-toggle {
+    margin-left: auto;
+    align-self: center;
+    background: none;
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    color: hsl(var(--foreground));
+}
+.bps-theme-toggle:hover { background: hsl(var(--accent)); }
+.bps-tab {
+    appearance: none;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: hsl(var(--muted-foreground));
+    cursor: pointer;
+    transition: color .12s, border-color .12s;
+}
+.bps-tab:hover { color: hsl(var(--foreground)); }
+.bps-tab.active {
+    color: hsl(var(--foreground));
+    border-bottom-color: hsl(var(--sidebar-primary));
+}
+.bps-tabpanel { display: none; }
+.bps-tabpanel.active { display: block; }
+
+/* Main split: content (setup + map) + sidebar */
+.bps-main { display: flex; gap: 16px; align-items: flex-start; }
+.bps-content { flex: 1 1 auto; min-width: 0; }
+
+/* Ultrawide (e.g. 32:9): setup stacked on the left, map centered, zones right.
+   .bps-content becomes display:contents so its children (setup row, zone bar,
+   canvas) join the grid directly. */
+@media (min-width: 1600px) and (min-aspect-ratio: 5/2) {
+    .bps-main {
+        display: grid;
+        /* Map takes ~80% of the width; the setup column on the left and the
+           zones column on the right are equal (~10% each). */
+        grid-template-columns: minmax(240px, 1fr) minmax(0, 8fr) minmax(240px, 1fr);
+        /* Map column stacks: zone bar (row 1), adjust knobs (row 2), map (row 3).
+           Both bar rows are `auto`, so they collapse to 0 when their element is
+           display:none — the map fills the height when neither is shown. */
+        grid-template-rows: auto auto 1fr;
+        align-items: start;
+    }
+    /* Let the stacked cards' controls spread across the wider column. */
+    .bps-setup-row > .bps-setup-col { flex: 0 0 auto; width: 100%; }
+    .bps-content { display: contents; }
+    .bps-setup-row { grid-column: 1; grid-row: 1 / 4; flex-direction: column; }
+    .bps-setup-row > .bps-setup-col { flex: 0 0 auto; }
+    #zonediv { grid-column: 2; grid-row: 1; }
+    /* Own row (not shared with #zonediv) — tracking and an adjust preview can be
+       open at once, so sharing a cell would overlap them. Explicit placement is
+       required: display:contents would otherwise auto-drop it into the grid. */
+    #bpsAdjustControls { grid-column: 2; grid-row: 2; }
+    .bps-canvas-wrap { grid-column: 2; grid-row: 3; }
+    .bps-sidebar { grid-column: 3; grid-row: 1 / 4; }
+}
+
+/* Setup: three side-by-side column cards (Floor / Tools / Tracking) */
+.bps-setup-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
+.bps-setup-col {
+    flex: 1 1 300px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+}
+/* Tool buttons: two per row, compact height */
+.bps-setup-col .bps-btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bps-setup-col .bps-btnrow button { height: 30px; padding-top: 0; padding-bottom: 0; }
+.bps-col-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+}
+.bps-setup-col .bps-input { width: 100%; min-width: 0; }
+.bps-field-row { display: flex; gap: 10px; }
+.bps-field-row .bps-field { flex: 1 1 0; min-width: 0; }
+.bps-field { display: flex; flex-direction: column; gap: 3px; }
+.bps-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+}
+.bps-viewrow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 30px; }
+/* Pin the grid toggle to one width so cycling off -> m -> ft never resizes it
+   or bumps it onto a second row (its label was the only variable-width item). */
+#gridToggle { min-width: 74px; }
+/* Distance-circles / trace-path / receiver-distances controls: each groups a
+   switch + its help tooltip so they show or hide as one unit. The first two are
+   only shown while tracking (an inline style="display:none" hides them until JS
+   reveals them by clearing that inline display); receiver distances need no
+   session and show whenever the Tracking column does. inline-flex keeps the
+   spacing they had as separate view-row items. */
+#circleControl, #traceControl, #recDistControl { display: inline-flex; align-items: center; gap: 8px; }
+/* Receiver-distances options: their own indented, wrapping row under the toggle
+   (revealed by JS only while the overlay is on). Wrapping + content-sized
+   selects keep all three inside the narrow Tracking card instead of overflowing
+   into the sidebar; the left accent reads them as settings for the toggle above. */
+.bps-recdist-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-width: 100%;
+    margin-left: 6px;
+    padding-left: 10px;
+    border-left: 2px solid hsl(var(--border));
+}
+.bps-recdist-options .bps-input {
+    width: auto;
+    min-width: 0;
+    flex: 0 1 auto;
+    font-size: 12.5px;
+}
+
+/* Multi-device tracking legend: one row per tracked device — colour swatch
+   (matches its on-map icon/circles/path), name, and a remove (×) button. Click
+   a row to make it the active device (the tracker-icon controls target it),
+   shown by the highlighted background. */
+.bps-track-legend { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.bps-track-legend-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 3px 6px; border-radius: 6px;
+}
+.bps-track-legend-row.is-active { background: rgba(127, 127, 127, 0.16); }
+/* Isolated on the map (only this device shown) — a left accent bar. */
+.bps-track-legend-row.is-focused { box-shadow: inset 3px 0 0 0 currentColor; }
+.bps-track-swatch {
+    width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25); cursor: pointer;
+}
+.bps-track-name {
+    flex: 1 1 auto; font-size: 13px; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bps-track-remove {
+    flex: 0 0 auto; border: none; background: transparent; color: inherit;
+    font-size: 16px; line-height: 1; cursor: pointer; opacity: 0.6; padding: 0 4px;
+}
+.bps-track-remove:hover { opacity: 1; color: #d32f2f; }
+
+/* Inputs */
+.bps-input {
+    height: 30px;
+    padding: 0 10px;
+    min-width: 160px;
+    border: 1px solid hsl(var(--input));
+    border-radius: 8px;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-size: 13px;
+    font-family: inherit;
+}
+.bps-input:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+}
+textarea#mapname { resize: none; line-height: 28px; overflow: hidden; }
+input.bps-input[type="file"] { padding: 4px 10px; height: 30px; }
+select.bps-input { cursor: pointer; }
+
+/* Buttons */
+.bps-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background .12s, border-color .12s, filter .12s;
+}
+.bps-btn-outline {
+    border-color: hsl(var(--border));
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+}
+.bps-btn-outline:hover { background: hsl(var(--accent)); }
+.bps-btn-primary { background: hsl(var(--sidebar-primary)); color: #fff; }
+.bps-btn-primary:hover { filter: brightness(1.12); }
+
+/* The tool buttons injected by script.js keep their utility classes; they
+   wrap inside the Tools column. */
+.bps-btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Zone bar */
+.bps-zonebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 13px;
+}
+.bps-zonevalue { font-weight: 600; color: hsl(var(--foreground)); }
+/* Tracked device's floor in the zone bar: muted when it's the floor you're
+   viewing, red/bold when the device is actually on a different floor. */
+.bps-zonefloor { color: hsl(var(--muted-foreground)); }
+.bps-zonefloor.bps-offfloor { color: hsl(0 84% 55%); font-weight: 600; }
+#switchFloorBtn.bps-switch-floor { height: 26px; padding: 0 10px; font-size: 12px; }
+
+/* Toggle switch */
+.bps-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.bps-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.bps-slider {
+    position: relative;
+    flex: 0 0 auto;
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    background: hsl(var(--muted));
+    transition: background .15s;
+}
+.bps-slider::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform .15s;
+}
+.bps-switch input:checked + .bps-slider::after { transform: translateX(14px); }
+.bps-switch input:focus-visible + .bps-slider {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+}
+
+/* Canvas */
+.bps-canvas-wrap {
+    position: relative;
+    margin-top: 10px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    overflow: hidden;
+    background: #ffffff;
+}
+.bps-canvas-wrap canvas {
+    display: block;
+    /* Fit the map within the available width AND the viewport height, preserving
+       the plan's aspect ratio (width:auto + max-width caps display at the 2000px
+       drawing buffer and centers with margin:auto). Without the max-height, a
+       square/portrait floor-plan on a wide monitor would grow taller than the
+       viewport and push the map (and Reset-view button) below the fold. */
+    max-width: 100%;
+    width: auto;
+    height: auto;
+    max-height: calc(100vh - 320px);
+    margin: 0 auto;
+}
+/* In the ultrawide grid the map fills the 80% column. This must come AFTER the
+   fit-to-box rule above: media queries don't add specificity, so an override
+   placed earlier (inside the ultrawide grid block) would lose the source-order
+   tie to the base rule and the map would cap at the 2000px buffer instead. */
+@media (min-width: 1600px) and (min-aspect-ratio: 5/2) {
+    .bps-canvas-wrap canvas { width: 100%; max-height: none; }
+}
+/* Receiver-distances colour key: overlaid on the map's top-left, click-through,
+   shown by JS only while that overlay is actually drawing. */
+.bps-recdist-legend {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 5;
+    pointer-events: none; /* never block clicks on the map beneath */
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--background) / 0.9);
+    color: hsl(var(--foreground));
+    font-size: 11px;
+    line-height: 1.3;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+    max-width: 210px;
+}
+.bps-recdist-legend-title { font-weight: 600; margin-bottom: 5px; }
+.bps-recdist-legend-bar {
+    height: 10px;
+    border-radius: 5px;
+    /* Matches the overlay's hue ramp: hue 240 (short) -> 120 (accurate) -> 0 (long). */
+    background: linear-gradient(to right,
+        hsl(240, 80%, 45%), hsl(210, 80%, 45%), hsl(180, 80%, 45%), hsl(150, 80%, 45%),
+        hsl(120, 80%, 45%), hsl(90, 80%, 45%), hsl(60, 80%, 45%), hsl(30, 80%, 45%), hsl(0, 80%, 45%));
+}
+.bps-recdist-legend-scale {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2px;
+    font-size: 10px;
+    opacity: 0.85;
+}
+.bps-recdist-legend-note {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 5px;
+    font-size: 10px;
+    opacity: 0.85;
+}
+.bps-recdist-legend-dash {
+    width: 16px;
+    border-top: 3px dashed hsl(0, 0%, 45%);
+    flex: none;
+}
+
+#viewReset {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    padding: 6px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 1px solid hsl(var(--border));
+    background: hsl(var(--background) / 0.92);
+    color: hsl(var(--foreground));
+    cursor: pointer;
+}
+#viewReset:hover { background: hsl(var(--accent)); }
+/* Save/Cancel for the active layout tool: pinned to the map's top-left
+   (viewReset owns bottom-left), shown only while a tool is active. Green Save
+   confirms, red Cancel discards — the tool buttons themselves keep their label. */
+#mapToolActions {
+    position: absolute;
+    left: 10px;
+    top: 10px;
+    display: flex;
+    gap: 8px;
+}
+#mapToolActions button {
+    padding: 6px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border-radius: 8px;
+    background: hsl(var(--background) / 0.92);
+    cursor: pointer;
+}
+#saveToolBtn { border: 1px solid hsl(142 71% 40%); color: hsl(142 71% 32%); }
+#saveToolBtn:hover { background: hsl(142 71% 40%); color: #fff; }
+#cancelToolBtn { border: 1px solid hsl(0 84% 60%); color: hsl(0 84% 55%); }
+#cancelToolBtn:hover { background: hsl(0 84% 60%); color: #fff; }
+
+/* Sidebar: zones with their receivers */
+.bps-sidebar {
+    flex: 0 0 320px;
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - 24px); /* refined at runtime to the viewport bottom */
+    overflow-y: auto;
+    background: hsl(var(--sidebar-background));
+    color: hsl(var(--sidebar-foreground));
+    border: 1px solid hsl(var(--sidebar-border));
+    border-radius: 12px;
+    padding: 14px;
+}
+.bps-sidebar h3 { font-size: 14px; font-weight: 600; margin: 0 0 10px; }
+.bps-zone-group {
+    border: 1px solid hsl(var(--sidebar-border));
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+.bps-zone-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: hsl(var(--sidebar-accent));
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+/* Count sits outside .bps-zone-title so a long zone name is what gets the
+   ellipsis, never the "· N" count. */
+.bps-zone-head .bps-count { color: hsl(var(--muted-foreground)); font-weight: 400; flex: 0 0 auto; white-space: nowrap; }
+.bps-zone-title { flex: 1 1 auto; min-width: 0; }
+/* Collapse caret: points down when expanded, rotates to point right when the
+   group is collapsed. */
+.bps-caret {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: hsl(var(--muted-foreground));
+    transition: transform 0.15s ease;
+}
+.bps-zone-group.bps-collapsed .bps-caret { transform: rotate(-90deg); }
+.bps-zone-group.bps-collapsed ul { display: none; }
+.bps-zone-group ul { list-style: none; margin: 0; padding: 4px 0; }
+.bps-zone-group li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 10px;
+    font-size: 12.5px;
+}
+.bps-zone-group li span,
+.bps-zone-head .bps-zone-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bps-zone-group li:hover { background: hsl(var(--sidebar-accent)); }
+.bps-zone-group li.bps-rec-row { cursor: pointer; }
+/* Let the receiver name grow so its actions group (height + delete) is pinned
+   to a fixed right-hand column — consistent across rows regardless of name
+   length or the mount-height badge. */
+.bps-rec-row > span:first-child { flex: 1 1 auto; min-width: 0; }
+/* Divider before the no-go toggle: separates the two colour controls (swatch
+   + colour on/off) from the structural actions so they don't read as a pair. */
+.bps-zone-actions .bps-nogo-btn {
+    margin-left: 5px;
+    padding-left: 7px;
+    border-left: 1px solid hsl(var(--border));
+    border-radius: 0;
+}
+/* The receiver currently focused on the map: accent bar + tint, held on hover
+   so the active row stays distinguishable from a plain hover. */
+.bps-zone-group li.bps-rec-focused,
+.bps-zone-group li.bps-rec-focused:hover {
+    background: hsl(var(--sidebar-accent));
+    box-shadow: inset 3px 0 0 hsl(var(--primary));
+}
+/* Mount-height badge on a receiver row (set via the ruler button). The border
+   keeps the pill legible on hovered/focused rows, whose background is the
+   same --sidebar-accent the badge fill uses. */
+.bps-rec-height {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    font-size: 11px;
+    line-height: 16px;
+    color: hsl(var(--muted-foreground));
+    background: hsl(var(--sidebar-accent));
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    white-space: nowrap;
+}
+.bps-icon-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: hsl(var(--muted-foreground));
+    padding: 2px;
+    border-radius: 6px;
+}
+.bps-icon-btn:hover { color: hsl(0 84% 60%); background: hsl(var(--sidebar-accent)); }
+/* No-go toggle in its active state: the no-entry icon lit up so a dead-space
+   zone is obvious in the list (issue #60). Hover keeps the lit colour rather
+   than the shared red delete-hover. */
+.bps-icon-btn.bps-nogo-on,
+.bps-icon-btn.bps-nogo-on:hover { color: hsl(0 84% 60%); background: hsl(var(--sidebar-accent)); }
+/* "no-go" tag beside a dead-space zone's name in the sidebar. */
+.bps-nogo-tag {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: hsl(var(--muted-foreground));
+    border: 1px solid hsl(var(--border));
+    border-radius: 6px;
+    padding: 0 5px;
+    margin-left: 4px;
+    white-space: nowrap;
+}
+.bps-zone-actions { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+/* Native colour picker shown as a small swatch beside a zone's name. */
+.bps-zone-swatch {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid hsl(var(--border));
+    border-radius: 5px;
+    background: none;
+    cursor: pointer;
+}
+.bps-zone-swatch::-webkit-color-swatch-wrapper { padding: 2px; }
+.bps-zone-swatch::-webkit-color-swatch { border: none; border-radius: 3px; }
+.bps-zone-swatch::-moz-color-swatch { border: none; border-radius: 3px; }
+/* Dimmed while the zone's colour is removed (the swatch still shows what it
+   would be if re-enabled). */
+.bps-zone-swatch.bps-swatch-off { opacity: 0.35; }
+/* Sidebar header with the global "Colours" toggle beside the title. */
+.bps-sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#zoneColorsToggle { height: 26px; padding: 0 10px; font-size: 12px; flex: 0 0 auto; }
+.bps-subzone-list { padding-left: 16px !important; }
+.bps-subzone-row { justify-content: flex-start; }
+.bps-subzone-row > span:not(.bps-subzone-dot) { flex: 1 1 auto; }
+.bps-subzone-dot { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; display: inline-block; }
+.bps-empty, .bps-hint { color: hsl(var(--muted-foreground)); font-size: 12.5px; }
+.bps-hint { margin-top: 10px; }
+/* Scanner naming-mismatch warnings (issue #64), amber to read as "attention". */
+.bps-scanner-issues {
+    margin: 8px 0;
+    padding: 8px 10px;
+    border: 1px solid hsl(38 92% 50% / 0.5);
+    border-radius: 8px;
+    background: hsl(38 92% 50% / 0.08);
+    font-size: 12px;
+}
+.bps-issues-title { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: hsl(38 92% 45%); margin-bottom: 6px; }
+.bps-issue { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 5px; }
+.bps-issue-msg { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bps-issue-hint { color: hsl(var(--muted-foreground)); font-size: 11px; }
+.bps-relink-btn { height: 24px; padding: 0 8px; font-size: 11px; flex: 0 0 auto; }
+.bps-issue-note { color: hsl(var(--muted-foreground)); margin-top: 4px; }
+
+/* Receiver-linking status chips (issue #64) — shared by the map-sidebar
+   heads-up and the Debugging tab table. */
+.bps-linking-chip {
+    display: inline-block;
+    flex: 0 0 auto;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+.bps-chip-live { background: hsl(142 71% 45% / 0.18); color: hsl(142 61% 38%); }
+.bps-chip-silent { background: hsl(38 92% 50% / 0.18); color: hsl(38 92% 42%); }
+.bps-chip-unmatched { background: hsl(0 84% 60% / 0.18); color: hsl(0 74% 52%); }
+
+/* Map sidebar: compact "not reporting right now" heads-up (names only). */
+.bps-linking { margin: 8px 0; font-size: 12px; }
+.bps-linking-mini {
+    padding: 8px 10px;
+    border: 1px solid hsl(38 92% 50% / 0.5);
+    border-radius: 8px;
+    background: hsl(38 92% 50% / 0.08);
+}
+.bps-linking-mini-title { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: hsl(38 92% 45%); margin-bottom: 6px; }
+.bps-linking-mini-list { list-style: none; margin: 0 0 6px; padding: 0; }
+.bps-linking-mini-list li { font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 1px 0; }
+.bps-linking-mini-hint { color: hsl(var(--muted-foreground)); font-size: 11px; line-height: 1.4; }
+
+/* Debugging tab: full receiver-linking table. */
+.bps-debug { font-size: 13px; }
+.bps-debug-msg { color: hsl(var(--muted-foreground)); margin: 8px 0; }
+.bps-debug-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.bps-debug-summary { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+/* Debugging-tab sub-tabs (Receivers / Beacons). */
+.bps-subtabs { display: inline-flex; gap: 4px; }
+.bps-subtab {
+    padding: 5px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    background: hsl(var(--background) / 0.6);
+    color: hsl(var(--muted-foreground));
+    cursor: pointer;
+}
+.bps-subtab.active { background: hsl(var(--sidebar-primary)); border-color: hsl(var(--sidebar-primary)); color: hsl(var(--sidebar-primary-foreground)); }
+.bps-debug-tablewrap { overflow-x: auto; border: 1px solid hsl(var(--border)); border-radius: 8px; }
+.bps-debug-table { width: 100%; border-collapse: collapse; }
+.bps-debug-table th, .bps-debug-table td { text-align: left; padding: 8px 12px; vertical-align: top; }
+.bps-debug-table thead th {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: hsl(var(--muted-foreground)); font-weight: 700;
+    border-bottom: 1px solid hsl(var(--border));
+    white-space: nowrap;
+}
+.bps-debug-table tbody tr + tr { border-top: 1px solid hsl(var(--border) / 0.6); }
+.bps-debug-name, .bps-debug-hw { font-family: monospace; }
+.bps-debug-hw { color: hsl(var(--muted-foreground)); }
+.bps-debug-none { color: hsl(var(--muted-foreground)); font-style: italic; }
+.bps-debug-row.bps-status-unmatched .bps-debug-name { color: hsl(0 74% 52%); }
+.bps-debug-readings { display: flex; flex-wrap: wrap; gap: 5px; }
+.bps-debug-reading {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 1px 4px 1px 7px;
+    border-radius: 6px;
+    font-family: monospace;
+    background: hsl(var(--muted) / 0.5);
+}
+.bps-debug-reading.is-live { background: hsl(142 71% 45% / 0.14); }
+.bps-debug-reading.is-silent { background: hsl(38 92% 50% / 0.14); color: hsl(var(--muted-foreground)); }
+/* "unavailable" is a stronger signal than "unknown" — the entity is actually
+   gone, not just waiting on a value — so it reads bright orange-red. */
+.bps-debug-reading.is-unavailable { background: hsl(12 88% 53% / 0.22); color: hsl(12 85% 55%); }
+.bps-debug-reading.is-unavailable .bps-debug-val { background: hsl(12 88% 53% / 0.18); }
+.bps-debug-dev { opacity: 0.85; }
+.bps-debug-val { font-weight: 700; padding: 0 5px; border-radius: 4px; background: hsl(var(--background) / 0.6); }
+.bps-debug-subtitle { margin: 18px 0 8px; font-size: 13px; }
+.bps-debug-help { margin-top: 12px; color: hsl(var(--muted-foreground)); font-size: 12px; line-height: 1.5; }
+
+.bps-scale-status { margin-top: 10px; }
+.bps-scale-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 13px;
+    color: hsl(var(--muted-foreground));
+    margin: 4px 0;
+}
+
+/* Calibration tab */
+.bps-card {
+    padding: 18px;
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+}
+.bps-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.bps-section-head h3 { font-size: 16px; font-weight: 600; margin: 0; }
+.bps-calib-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 10px;
+}
+.bps-calib-status { font-size: 13px; color: hsl(var(--muted-foreground)); margin: 6px 0 12px; }
+.bps-calib-matrix { overflow-x: auto; }
+/* Placed receivers absent from the calibration report, with why (issue #63). */
+.bps-calib-missing {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border: 1px solid hsl(38 92% 50% / 0.5);
+    border-radius: 8px;
+    background: hsl(38 92% 50% / 0.08);
+    font-size: 12px;
+    line-height: 1.5;
+}
+.bps-calib-missing-title { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: hsl(38 92% 45%); margin-bottom: 6px; }
+.bps-calib-missing p { margin: 4px 0; }
+.bps-calib-missing-note { color: hsl(var(--muted-foreground)); font-style: italic; }
+/* Diagonal (45°) column headers so long scanner names aren't cut off. */
+.bps-calib-matrix th.bps-calib-colhead {
+    height: 130px;
+    padding: 0;
+    vertical-align: bottom;
+    white-space: nowrap;
+    font-weight: 600;
+    font-size: 11px;
+}
+.bps-calib-matrix th.bps-calib-colhead > div {
+    width: 22px;
+    transform: translate(11px, 0) rotate(-45deg);
+    transform-origin: left bottom;
+}
+.bps-calib-matrix th.bps-calib-colhead > div > span {
+    display: inline-block;
+    padding: 0 4px;
+    white-space: nowrap;
+}
+
+/* Dark remaps for utility classes baked into generated HTML */
+.text-gray-500 { color: hsl(var(--muted-foreground)); }
+.bg-gray-50 { background: transparent; }
+input[type="checkbox"] { accent-color: hsl(var(--sidebar-primary)); }
+.tooltip-text { background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground)); }
+
+/* The floating pickers sit on the (light) floor plan; keep them readable */
+.rec-input, .zone-input, .scale-input {
+    background-color: #ffffff;
+    color: #111111;
+}
+
+/* Small screens: sidebar drops under the map */
+@media (max-width: 1100px) {
+    .bps-main { flex-direction: column; }
+    .bps-sidebar { flex: 1 1 auto; width: 100%; position: static; max-height: none; }
+}

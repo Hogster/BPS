@@ -13,9 +13,9 @@ Github is used to host code, to track issues and feature requests, as well as ac
 
 Pull requests are the best way to propose changes to the codebase.
 
-1. Fork the repo and create your branch from `master`.
+1. Fork the repo and create your branch from `main`.
 2. If you've changed something, update the documentation.
-3. Test you contribution.
+3. Test your contribution (see [Testing](#testing)).
 4. Issue that pull request!
 
 ## Any contributions you make will be under the MIT Software License
@@ -41,47 +41,29 @@ Report a bug by [opening a new issue](../../issues/new/choose); it's that easy!
 
 People _love_ thorough bug reports. I'm not even kidding.
 
-## Test your code modification
+## Testing
 
-Try [integration_blueprint template](https://github.com/custom-components/integration_blueprint).
+The backend has a unit-test suite under [`tests/`](./tests) that runs against
+the real integration modules with the Home Assistant runtime stubbed out (see
+`tests/conftest.py`), so it needs no HA install — only the numeric libraries
+the positioning/geometry code uses.
 
-It comes with development environment in a container, easy to launch
-if you use Visual Studio Code. With this container you will have a stand alone
-Home Assistant instance running and already configured with the included
-[`.devcontainer.json`](./.devcontainer.json)
-file.
-
-You can use the `pre-commit` settings implemented in this repository to have
-linting tool checking your contributions (see dedicated section below).
-
-You should also verify that existing [tests](./tests) are still working
-and you are encouraged to add new ones.
-You can run the tests using the following command from the root folder:
-
-`./scripts/test`
-
-If any of the tests fail, make the necessary changes to the tests as part of
-your changes to the integration.
-
-## Pre-commit
-
-You can use the [pre-commit](https://pre-commit.com/) settings included in the
-repostory to have code style and linting checks.
-
-With `pre-commit` tool already installed,
-activate the settings of the repository:
+From the repository root:
 
 ```console
-$ pre-commit install
+$ pip install -r requirements_test.txt
+$ pytest tests/ -q
 ```
 
-Now the pre-commit tests will be done every time you commit.
+CI runs the same suite plus a byte-compile of the integration and a
+`node --check` of the frontend on every push and pull request
+(`.github/workflows/test.yaml`), alongside Hassfest/HACS validation
+(`.github/workflows/validate.yaml`). Please keep the suite green and add tests
+for new positioning, calibration, or election logic.
 
-You can run the tests on all repository file with the command:
-
-```console
-$ pre-commit run --all-files
-```
+For end-to-end testing in a running Home Assistant, the
+[integration_blueprint template](https://github.com/custom-components/integration_blueprint)
+provides a VS Code dev-container with a standalone HA instance.
 
 ## License
 
