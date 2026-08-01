@@ -428,8 +428,8 @@ measurements through the `bermuda.dump_devices` service.
 
 #### Shelly Gen2+ equivalent
 
-Shelly Gen2+ devices (Plus/Pro/Gen3/Gen4) don't have `esp32_ble_beacon`, but
-their scripting engine can advertise the identical iBeacon. Add this as a
+Shelly Gen2+ devices (Plus/Pro/Gen3/Gen4) can use the on-device
+scripting engine to advertise the identical iBeacon. Add this as a
 [Script](https://shelly-api-docs.shelly.cloud/gen2/Scripts/Overview/) on each
 device (Settings → Scripts in Shelly's own web UI, or via the `Script.PutCode`
 RPC for bulk provisioning), then enable it so it survives a reboot:
