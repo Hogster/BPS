@@ -426,6 +426,57 @@ esp32_ble_beacon:
 Nothing needs to be set up in Bermuda — BPS reads the probe-to-probe
 measurements through the `bermuda.dump_devices` service.
 
+#### Shelly Gen2+ equivalent
+
+Shelly Gen2+ devices (Plus/Pro/Gen3/Gen4) don't have `esp32_ble_beacon`, but
+their scripting engine can advertise the identical iBeacon. Add this as a
+[Script](https://shelly-api-docs.shelly.cloud/gen2/Scripts/Overview/) on each
+device (Settings → Scripts in Shelly's own web UI, or via the `Script.PutCode`
+RPC for bulk provisioning), then enable it so it survives a reboot:
+
+```javascript
+const appleCompanyId = "\x4c\x00"; // Apple's Bluetooth SIG Company Identifier
+const ibeaconPrefix = "\x02\x15"; // iBeacon custom type indicator
+const manufacturer_type = "\x1A\xFF"; // 0xFF manufacturer type
+const measured_power = -59; // default dbM
+
+function create_ibeacon_advertisement_string(service_uuid_bytes, major, minor, measured_power)
+{
+  var majorBytes    = String.fromCharCode((major >> 8) & 0xff, major & 0xff);
+  var minorBytes    = String.fromCharCode((minor >> 8) & 0xff, minor & 0xff);
+  var powerByte     = String.fromCharCode(measured_power & 0xff);
+  return manufacturer_type + appleCompanyId + ibeaconPrefix + service_uuid_bytes + majorBytes + minorBytes + powerByte;
+}
+
+// fde3b150-2f64-43ba-aee9-867f75ee4a6f - same UUID as the ESPHome example above
+const bsp_service_uuid_bytes = "\xFD\xE3\xB1\x50\x2F\x64\x43\xBA\xAE\xE9\x86\x7F\x75\xEE\x4A\x6F";
+
+let this_device_minor_no = null; // resolved at runtime from this device's own IP
+
+function startBeaconTimer() {
+  Timer.set(1000, true, function() {
+    if (this_device_minor_no === null) {
+      return; // IP not resolved yet, skip this tick
+    }
+    BLE.advertiseOnce(create_ibeacon_advertisement_string(bsp_service_uuid_bytes, 1, this_device_minor_no, measured_power));
+  });
+}
+
+function resolveMinorFromOwnIp() {
+  Shelly.call("WiFi.GetStatus", null, function(result, error_code, error_message) {
+    if (error_code !== 0 || !result || !result.sta_ip) {
+      Timer.set(2000, false, resolveMinorFromOwnIp); // WiFi not ready yet, retry
+      return;
+    }
+    let octets = result.sta_ip.split(".");
+    this_device_minor_no = +octets[3];
+  });
+}
+
+resolveMinorFromOwnIp();
+startBeaconTimer();
+```
+
 ### Running it
 
 In the panel's **Receiver Calibration** section, select a floor and start a run
