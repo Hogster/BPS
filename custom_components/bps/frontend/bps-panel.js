@@ -40,9 +40,19 @@ class BpsPanel extends HTMLElement {
       this._pushToken(true);
       return;
     }
-    this.style.display = "block";
-    this.style.height = "100%";
+    // Fill the panel area WITHOUT depending on our ancestors: `height: 100%`
+    // resolves to nothing the moment any ancestor lacks a definite height, and
+    // the app then collapses to a sliver (Home Assistant 2026.8 changed the
+    // panel container and did exactly that). So: flex, so we also fill
+    // correctly when the container is a flex parent; plus a viewport-derived
+    // min-height, which needs no cooperation from anything above us.
+    this.style.display = "flex";
+    this.style.flexDirection = "column";
+    this.style.flex = "1 1 auto";
     this.style.width = "100%";
+    this.style.height = "100%";
+    this.style.boxSizing = "border-box";
+    this.style.minHeight = "calc(100vh - var(--header-height, 56px))";
 
     const iframe = document.createElement("iframe");
     iframe.src = "/bps/index.html";
@@ -50,10 +60,32 @@ class BpsPanel extends HTMLElement {
     iframe.style.border = "0";
     iframe.style.width = "100%";
     iframe.style.height = "100%";
+    iframe.style.flex = "1 1 auto";
+    iframe.style.minHeight = "0";   // let flex shrink it inside a sized parent
     iframe.style.display = "block";
     this._iframe = iframe;
 
     this.appendChild(iframe);
+
+    // Refine the fallback to the EXACT space below our own top edge, so the
+    // panel is right whatever the header's height is in this HA version (and
+    // stays right when the window resizes or the layout shifts). Only trust a
+    // plausible header-sized offset: if we ever measure a large top (scrolled
+    // container, unexpected layout) keep the CSS fallback rather than
+    // computing our way down to a zero-height panel.
+    this._fit = () => {
+      if (!this.isConnected) return;
+      const top = Math.round(this.getBoundingClientRect().top);
+      this.style.minHeight = (top >= 0 && top <= 200)
+        ? `calc(100vh - ${top}px)`
+        : "calc(100vh - var(--header-height, 56px))";
+    };
+    requestAnimationFrame(this._fit);
+    window.addEventListener("resize", this._fit);
+  }
+
+  disconnectedCallback() {
+    if (this._fit) window.removeEventListener("resize", this._fit);
   }
 
   _onMessage(event) {
