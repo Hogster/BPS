@@ -1675,6 +1675,19 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     return True
 
 
+async def async_remove_config_entry_device(hass, config_entry, device_entry):
+    """Allow deleting a BPS device from the UI once it holds no entities.
+
+    A BPS device is keyed by its tracker's Bermuda prefix, so renaming or
+    dropping a tracker leaves an empty device behind. One that still has BPS
+    sensors would only be re-created by the next update, so keep it.
+    """
+    entity_registry = er.async_get(hass)
+    return not er.async_entries_for_device(
+        entity_registry, device_entry.id, include_disabled_entities=True
+    )
+
+
 async def async_setup_entry(hass, entry):
     """Set the integration from a configuration entry"""
     _LOGGER.info("async_setup_entry called")
