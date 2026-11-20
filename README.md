@@ -20,8 +20,8 @@ Follow the discussion on [Home Assistant Community](https://community.home-assis
 [![Community Forum][forum-shield]][forum]
 
 > ### 🎉 BPS now runs on Raspberry Pi — and on every supported Home Assistant install
-> The long-standing blocker ([#1](https://github.com/Hogster/BPS/issues/1)) is gone. SciPy now ships
-> prebuilt wheels for Home Assistant OS on ARM (aarch64), so BPS installs straight from HACS on a
+> The long-standing blocker ([#1](https://github.com/Hogster/BPS/issues/1)) is gone. Home Assistant now
+> ships NumPy and SciPy itself, on every platform, so BPS installs straight from HACS on a
 > **Raspberry Pi 4/5, Home Assistant Green, Yellow, ODROID** and of course x86-64 machines —
 > no compiling, no workarounds. See [Platform support](#platform-support).
 
@@ -61,9 +61,9 @@ See [The Wiki](https://github.com/Hogster/BPS/wiki/) for setup details.
 
 ### Platform support
 
-BPS uses NumPy, SciPy and Shapely for trilateration and zone geometry. All three now publish
-prebuilt binary wheels for the platforms Home Assistant runs on, so installing BPS no longer
-compiles anything:
+BPS uses NumPy, SciPy and Shapely for trilateration and zone geometry. Home Assistant now ships
+NumPy and SciPy in its own image (HA 2026.11: NumPy 2.3.2, SciPy 1.18.1), and Shapely installs as a
+prebuilt wheel in about a second, so installing BPS compiles nothing:
 
 | Hardware | Install type | Status |
 |---|---|---|
@@ -72,10 +72,10 @@ compiles anything:
 | 32-bit systems (ARMv7, i386) | — | ❌ Not supported (dropped by Home Assistant itself) |
 
 Earlier releases failed on Raspberry Pi with `meson-python: error: Could not find ninja`
-([#1](https://github.com/Hogster/BPS/issues/1)) because SciPy had no prebuilt wheel for HA OS on
-ARM and had to be compiled. SciPy 1.16+ ships those wheels, and BPS now requires
-`scipy>=1.16.0` so that the prebuilt wheel is always used. If you tried BPS on a Pi before and
-gave up, update Home Assistant and try again.
+([#1](https://github.com/Hogster/BPS/issues/1)) because SciPy was not part of Home Assistant and had
+to be compiled on the device. Verified for v0.2.2: on the official ARM64 Home Assistant 2026.11 image
+(the same one HA OS runs on a Raspberry Pi 4/5) BPS installs, starts cleanly and its full test suite
+passes. If you tried BPS on a Pi before and gave up, update Home Assistant and try again.
 
 ## What's new in 0.2.2
 
