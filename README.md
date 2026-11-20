@@ -158,7 +158,7 @@ values.
 Now a tracker that **no receiver has detected for 5 minutes** disappears from
 the map, and its `_bps_zone`, `_bps_floor` and `_bps_nearest_zone` sensors go
 to `unknown`. It reappears on the first fix once it's back in range. Tune the
-grace period with a top-level `"position_timeout"` (seconds) in `bpsdata.txt`.
+grace period with a top-level `"position_timeout"` (seconds) in the BPS layout (`config/.storage/bps`, formerly `bpsdata.txt`).
 
 (For a faster "out of range" signal, `_bps_nearest_zone` already reacts within
 ~30 s — Bermuda's own distance timeout — while the map position keeps the
@@ -490,7 +490,7 @@ any sibling) — verify their placement before applying.
 
 ![The Receiver Calibration tab: the auto-calibration switch and the full matrix — rows transmit, columns receive; blue measures short, red measures long](img/screenshots/panel-calibration-tab.png)
 
-**Apply corrections** stores a per-receiver factor in `bpsdata.txt`, and the
+**Apply corrections** stores a per-receiver factor in the BPS layout (`config/.storage/bps`, formerly `bpsdata.txt`), and the
 backend multiplies every distance that receiver reports from then on. Because
 Bermuda's path-loss model is exponential, this is exactly equivalent to a
 per-scanner RSSI offset — and the result lists the equivalent Bermuda
@@ -505,7 +505,7 @@ Toggle **Auto calibration** and it runs permanently: sampling every 30 seconds
 into a rolling ~6-hour window, re-solving every 15 minutes for every floor, and
 re-applying corrections whenever they shift by more than 1%. It keeps adapting
 as the environment changes (furniture moves, a probe is swapped, a door stays
-open). The toggle is stored in `bpsdata.txt` (alongside the corrections), while the
+open). The toggle is stored in the BPS layout (`config/.storage/bps`, alongside the corrections), while the
 latest solve and the rolling sample window are persisted separately in
 `bps_calibration_state.json`. So after a restart the toggle sticks, the matrix
 reappears immediately, and the window resumes warm instead of rebuilding from
@@ -653,7 +653,7 @@ value shows as a badge; leave it empty to keep the old flat behaviour):
 - During tracking the vertical leg is removed from every reading
   (`horizontal = √(slant² − Δz²)`) before trilateration, assuming trackers are
   carried ~1 m above the floor (override with a top-level `"tracker_height"`
-  in `bpsdata.txt`, 0–5 m — e.g. `0.3` if you mostly track a pet; values
+  in the BPS layout (`config/.storage/bps`, formerly `bpsdata.txt`), 0–5 m — e.g. `0.3` if you mostly track a pet; values
   outside that range fall back to the 1 m default).
 - The **floor election is untouched** — it still compares the calibrated
   slant ranges, because "which receiver is nearest" must be judged before any

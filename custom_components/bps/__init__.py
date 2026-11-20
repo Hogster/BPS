@@ -644,12 +644,24 @@ def _build_device_availability(hass):
 
     A device slug that isn't unique is dropped (ambiguous) so a stale/duplicate
     device can't decide a receiver's status.
+
+    Devices are reached through the entity registry + dev_reg.async_get rather
+    than by treating dev_reg.devices as a mapping, which HA 2026.9 deprecated
+    (removed in 2027.9, issue #38). A device without entities could never
+    resolve a status anyway (device_online returns None for it).
     """
     ent_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
+    device_entities = {}
+    for ent in ent_reg.entities.values():
+        if ent.device_id:
+            device_entities.setdefault(ent.device_id, []).append(ent.entity_id)
     slug_to_device = {}
     ambiguous = set()
-    for d in dev_reg.devices.values():
+    for device_id in device_entities:
+        d = dev_reg.async_get(device_id)
+        if d is None:
+            continue
         name = d.name_by_user or d.name
         if not name:
             continue
@@ -662,10 +674,6 @@ def _build_device_availability(hass):
             slug_to_device[slug] = d.id
     for slug in ambiguous:
         slug_to_device.pop(slug, None)
-    device_entities = {}
-    for ent in ent_reg.entities.values():
-        if ent.device_id:
-            device_entities.setdefault(ent.device_id, []).append(ent.entity_id)
     return slug_to_device, device_entities
 
 
@@ -1675,6 +1683,20 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     return True
 
 
+async def async_remove_config_entry_device(hass, config_entry, device_entry):
+    """Allow deleting a BPS device from the UI once it holds no entities.
+
+    A BPS device is keyed by its tracker's Bermuda prefix, so renaming or
+    dropping a tracker leaves an empty device behind that HA otherwise refuses
+    to delete. One that still has BPS sensors would only be re-created by the
+    next update, so keep it. (Idea and original patch: PR #42 by cfoxga.)
+    """
+    entity_registry = er.async_get(hass)
+    return not er.async_entries_for_device(
+        entity_registry, device_entry.id, include_disabled_entities=True
+    )
+
+
 async def async_setup_entry(hass, entry):
     """Set the integration from a configuration entry"""
     _LOGGER.info("async_setup_entry called")
@@ -1970,7 +1992,7 @@ class BPSMapsListAPI(HomeAssistantView):
             return [
                 entry.name
                 for entry in entries
-                if entry.is_file() and entry.name.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
+                if entry.is_file() and Path(entry.name).suffix.lower() in _ALLOWED_MAP_EXTS
             ]
 
     async def get(self, request):
@@ -2066,11 +2088,11 @@ class BPSCordsAPI(HomeAssistantView):
 
     async def get(self, request):
         """Return apitricords from hass.data."""
-        apitricords = self.hass.data.get(DOMAIN, {}).get("apitricords", {})
-
-        if not apitricords:
-            return web.json_response({"error": "No data available"}, status=404)
-
+        # No fix yet is a normal state (nothing home, or still warming up), not
+        # a missing endpoint: answer 200 with an empty list. The old 404 made
+        # every poll look like a broken install in the browser console
+        # (issues #7, #32).
+        apitricords = self.hass.data.get(DOMAIN, {}).get("apitricords") or []
         return web.json_response(apitricords)
 
 # Trilateration function
