@@ -19,6 +19,12 @@ Follow the discussion on [Home Assistant Community](https://community.home-assis
 [![Discord][discord-shield]][discord]
 [![Community Forum][forum-shield]][forum]
 
+> ### 🎉 BPS now runs on Raspberry Pi — and on every supported Home Assistant install
+> The long-standing blocker ([#1](https://github.com/Hogster/BPS/issues/1)) is gone. SciPy now ships
+> prebuilt wheels for Home Assistant OS on ARM (aarch64), so BPS installs straight from HACS on a
+> **Raspberry Pi 4/5, Home Assistant Green, Yellow, ODROID** and of course x86-64 machines —
+> no compiling, no workarounds. See [Platform support](#platform-support).
+
 ## Huge thanks to @maxi1134
 
 **Version 0.2.0 is a major upgrade made possible by an extraordinary contribution from [@maxi1134](https://github.com/maxi1134).**
@@ -53,16 +59,32 @@ Install BPS via HACS:
 
 See [The Wiki](https://github.com/Hogster/BPS/wiki/) for setup details.
 
-### SciPy dependency
+### Platform support
 
-This integration depends on SciPy, which requires native binary support.
+BPS uses NumPy, SciPy and Shapely for trilateration and zone geometry. All three now publish
+prebuilt binary wheels for the platforms Home Assistant runs on, so installing BPS no longer
+compiles anything:
 
-- Supported: 64-bit Home Assistant installs (aarch64 / ARM64 or x86_64)
-- Not supported: 32-bit systems (e.g. ARMv7)
+| Hardware | Install type | Status |
+|---|---|---|
+| Raspberry Pi 4 / 5, Home Assistant Green / Yellow, ODROID (aarch64) | HA OS, Container, Supervised | ✅ Supported |
+| Intel / AMD PCs, NUCs, VMs, Proxmox (x86-64) | HA OS, Container, Supervised, Core | ✅ Supported |
+| 32-bit systems (ARMv7, i386) | — | ❌ Not supported (dropped by Home Assistant itself) |
 
-Even on supported hardware (such as Raspberry Pi 4/5 with a 64-bit OS), installation may fail depending on the Home Assistant environment, since SciPy cannot always be installed inside the restricted Python environment used by Home Assistant.
+Earlier releases failed on Raspberry Pi with `meson-python: error: Could not find ninja`
+([#1](https://github.com/Hogster/BPS/issues/1)) because SciPy had no prebuilt wheel for HA OS on
+ARM and had to be compiled. SciPy 1.16+ ships those wheels, and BPS now requires
+`scipy>=1.16.0` so that the prebuilt wheel is always used. If you tried BPS on a Pi before and
+gave up, update Home Assistant and try again.
 
-If you encounter issues, consider running Home Assistant in a container where you control the Python environment.
+## What's new in 0.2.2
+
+- **Raspberry Pi and all 64-bit Home Assistant installs supported** — see [Platform support](#platform-support)
+- Ready for Home Assistant 2027.9: no more `device_registry.devices` deprecation warning ([#38](https://github.com/Hogster/BPS/issues/38))
+- No more `/api/bps/cords 404` errors in the browser console when nothing is tracked ([#7](https://github.com/Hogster/BPS/issues/7), [#32](https://github.com/Hogster/BPS/issues/32))
+- Floor plans in any accepted image format (gif, svg, avif, jfif, …) show up under *Select existing* ([#8](https://github.com/Hogster/BPS/issues/8))
+- Receiver calibration explains *why* no receiver pairs are heard ([#40](https://github.com/Hogster/BPS/issues/40))
+- Empty BPS devices can be deleted from the device page (thanks [@cfoxga](https://github.com/cfoxga), PR [#42](https://github.com/Hogster/BPS/pull/42))
 
 ## What's new in 0.2.0
 
