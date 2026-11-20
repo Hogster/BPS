@@ -80,7 +80,7 @@ gave up, update Home Assistant and try again.
 ## What's new in 0.2.2
 
 - **Raspberry Pi and all 64-bit Home Assistant installs supported** — see [Platform support](#platform-support)
-- Ready for Home Assistant 2027.9: no more `device_registry.devices` deprecation warning ([#38](https://github.com/Hogster/BPS/issues/38))
+- Ready for Home Assistant 2027.8/2027.9: no more `device_registry.devices` ([#38](https://github.com/Hogster/BPS/issues/38)) or `via_device` deprecation warnings
 - No more `/api/bps/cords 404` errors in the browser console when nothing is tracked ([#7](https://github.com/Hogster/BPS/issues/7), [#32](https://github.com/Hogster/BPS/issues/32))
 - Floor plans in any accepted image format (gif, svg, avif, jfif, …) show up under *Select existing* ([#8](https://github.com/Hogster/BPS/issues/8))
 - Receiver calibration explains *why* no receiver pairs are heard ([#40](https://github.com/Hogster/BPS/issues/40))

@@ -7,6 +7,11 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
+# HA 2026.8 turned DeviceInfo into a dataclass with `via_device_id` (the parent's
+# registry id) and deprecated the `via_device` identifier tuple (removed in
+# 2027.8). Older HA only knows `via_device`, so pick per running version.
+_HAS_VIA_DEVICE_ID = "via_device_id" in getattr(DeviceInfo, "_field_set", ())
+
 DOMAIN = "bps_sensors"
 
 # (entity_id suffix / unique_id prefix, display label) per tracked device.
@@ -19,10 +24,11 @@ SENSOR_KINDS = [
 
 
 def find_bermuda_via_device(hass, entity):
-    """Identifier of the Bermuda device that owns this tracker's distance_to
-    sensors, so the BPS device can nest under it (via_device). None when it
-    can't be resolved (e.g. Bermuda not loaded yet) — the BPS device then just
-    stands on its own.
+    """Link to the Bermuda device that owns this tracker's distance_to sensors,
+    so the BPS device can nest under it. Returns {"via_device_id": id} on HA
+    2026.8+ and {"via_device": identifier} before that; None when it can't be
+    resolved (e.g. Bermuda not loaded yet) — the BPS device then just stands on
+    its own.
     """
     ent_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
@@ -30,11 +36,13 @@ def find_bermuda_via_device(hass, entity):
     for e in ent_reg.entities.values():
         if e.platform == "bermuda" and e.device_id and e.entity_id.startswith(prefix):
             dev = dev_reg.async_get(e.device_id)
+            if dev and _HAS_VIA_DEVICE_ID:
+                return {"via_device_id": dev.id}
             if dev and dev.identifiers:
                 # Prefer a bermuda identifier so the link points at the tracker
                 # device even if it carries identifiers from several integrations.
                 berm = [i for i in dev.identifiers if i[0] == "bermuda"]
-                return berm[0] if berm else next(iter(dev.identifiers))
+                return {"via_device": berm[0] if berm else next(iter(dev.identifiers))}
     return None
 
 
@@ -119,15 +127,13 @@ class CustomDistanceSensor(SensorEntity):
         # a tracked device share the same identifier, so they land together, and
         # via_device nests that device under its Bermuda tracker device.
         if device_key:
-            info = DeviceInfo(
+            self._attr_device_info = DeviceInfo(
                 identifiers={("bps", device_key)},
                 name=f"{device_key} (BPS)",
                 manufacturer="BPS",
                 model="BLE Positioning System",
+                **(via_device or {}),
             )
-            if via_device:
-                info["via_device"] = via_device
-            self._attr_device_info = info
 
     @property
     def name(self):
