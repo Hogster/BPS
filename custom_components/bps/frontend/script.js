@@ -4756,6 +4756,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         return null;
     }
 
+    // Why a sampling run hears nothing (issue #40), from the backend's summary
+    // of the latest bermuda.dump_devices payload. Only shown while 0 pairs.
+    function calibNoPairsHint(d) {
+        if (!d) return ' Waiting for the first Bermuda dump…';
+        if (!d.scanners) {
+            return ' Bermuda reports no scanners at all — is Bermuda installed, current, and seeing your proxies?';
+        }
+        if (!d.matched) {
+            return ` None of the ${d.placed} placed receivers matched any of Bermuda's ${d.scanners} scanners`
+                + ' — re-link the receivers to their proxies (Debugging tab) and save.';
+        }
+        if (d.matched < 2) {
+            return ` Only ${d.matched} of ${d.placed} placed receivers matched a scanner; at least two are`
+                + ' needed to hear each other — re-link the rest (Debugging tab).';
+        }
+        if (!d.beaconing) {
+            return ` ${d.matched} of ${d.placed} placed receivers matched a scanner, but none of them is heard`
+                + ' advertising an iBeacon — check the esp32_ble_beacon block on each proxy (see README) and'
+                + ' that the proxies were re-flashed.';
+        }
+        return ` ${d.beaconing} of ${d.matched} matched receivers are beaconing, but no sibling has heard`
+            + ' them recently — receivers may be out of range of each other.';
+    }
+
     async function calibRequest(body) {
         const res = await bpsFetch('/api/bps/calibration', {
             method: 'POST',
@@ -4907,7 +4931,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const done = total - left;
             calibStatus.textContent =
                 `Sampling floor ${status.floor}… ${Math.floor(done / 60)}:${String(done % 60).padStart(2, '0')}`
-                + ` of ${Math.floor(total / 60)} min · ${pairs} receiver pairs heard so far.`;
+                + ` of ${Math.floor(total / 60)} min · ${pairs} receiver pairs heard so far.`
+                + (pairs ? '' : calibNoPairsHint(status.last_dump));
             return;
         }
         if (status.state === 'error') {

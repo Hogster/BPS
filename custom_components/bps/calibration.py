@@ -365,17 +365,34 @@ def _ingest_dump(cal: dict, devices: dict) -> None:
             if isinstance(stamp, (int, float)) and stamp > newest:
                 newest = stamp
 
+    # What this dump contained, so the panel can say WHY no pairs are heard
+    # (issue #40) instead of only counting zero: no scanner matched a placed
+    # receiver, matched scanners but none advertises an iBeacon, or adverts
+    # exist but none were usable.
+    diag = {
+        "at": time.time(),
+        "scanners": 0,
+        "matched": len(scanner_slug_by_mac),
+        "placed": len(cal.get("receivers") or {}),
+        "beaconing": 0,
+        "usable": 0,
+    }
+    cal["last_dump"] = diag
+
     # The beacon advertises from the scanner's own MAC, so the transmitter's
     # measurements live on the scanner devices themselves.
     for dev in devices.values():
         if not isinstance(dev, dict) or dev.get("_is_scanner") is not True:
             continue
+        diag["scanners"] += 1
         tx_slug = scanner_slug_by_mac.get(str(dev.get("address") or "").lower())
         if tx_slug is None:
             continue
         adverts = dev.get("adverts")
         if not isinstance(adverts, dict):
             continue
+        if adverts:
+            diag["beaconing"] += 1
         for advert in adverts.values():
             if not isinstance(advert, dict):
                 continue
@@ -391,6 +408,7 @@ def _ingest_dump(cal: dict, devices: dict) -> None:
             cal["samples"].setdefault(f"{tx_slug}|{rx_slug}", deque(maxlen=SAMPLES_MAXLEN)).append(
                 float(distance)
             )
+            diag["usable"] += 1
 
 
 def _true_distance_m(cal: dict, slug_a: str, slug_b: str):
@@ -795,6 +813,7 @@ async def start_calibration(hass, floor_name: str, duration: int) -> dict:
             "receivers": receivers,
             "matched_placed": {},  # fresh window: re-learn which placements match
             "all_placed_slugs": _all_placed_slugs(coords),
+            "last_dump": None,
             "error": None,
         }
     )
@@ -975,6 +994,7 @@ def _status_payload(cal: dict) -> dict:
         "last_solved_at": cal["last_solved_at"],
         "pair_counts": pair_counts,
         "receiver_count": len(cal["receivers"]),
+        "last_dump": cal.get("last_dump"),
     }
     if cal["mode"] == "manual" and cal["state"] == "sampling" and cal["ends_at"]:
         payload["seconds_left"] = max(0, int(cal["ends_at"] - time.time()))
