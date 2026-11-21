@@ -829,3 +829,5 @@ and to everyone who files issues and PRs.
 [releases]: https://github.com/Hogster/BPS/releases
 [user_profile]: https://github.com/Hogster
 [bermuda]: https://github.com/agittins/bermuda
+[buymecoffee]: https://buymeacoffee.com/hogster
+[buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
