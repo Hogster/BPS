@@ -25,6 +25,10 @@ Follow the discussion on [Home Assistant Community](https://community.home-assis
 > **Raspberry Pi 4/5, Home Assistant Green, Yellow, ODROID** and of course x86-64 machines —
 > no compiling, no workarounds. See [Platform support](#platform-support).
 
+**Enjoying BPS?** It's built and maintained in my spare time. If it helps you find your keys, your cat or your kids, a coffee keeps the updates coming ☕
+
+<a href="https://buymeacoffee.com/hogster"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="45"></a>
+
 ## Huge thanks to @maxi1134
 
 **Version 0.2.0 is a major upgrade made possible by an extraordinary contribution from [@maxi1134](https://github.com/maxi1134).**
@@ -811,6 +815,14 @@ Enormous thanks again to [@maxi1134](https://github.com/maxi1134) for the
 [BPS-improved](https://github.com/maxi1134/BPS-improved) work that powers much of 0.2.0,
 to [@agittins](https://github.com/agittins) for [Bermuda](https://github.com/agittins/bermuda),
 and to everyone who files issues and PRs.
+
+## ☕ Support BPS
+
+BPS is free, open source and developed in my spare time. If it's useful in your home,
+you can support continued development — new features, Home Assistant compatibility fixes
+and answers in the forum — by buying me a coffee. Every cup is genuinely appreciated!
+
+<a href="https://buymeacoffee.com/hogster"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="60"></a>
 
 [commits-shield]: https://img.shields.io/github/commit-activity/y/Hogster/BPS.svg?style=for-the-badge
 [commits]: https://github.com/Hogster/BPS/commits/main
