@@ -4,6 +4,7 @@
     "codeowners": ["@Hogster"],
     "config_flow": true,
     "dependencies": ["http", "panel_custom"],
+    "after_dependencies": ["recorder"],
     "documentation": "https://github.com/Hogster/BPS",
     "integration_type": "device",
     "iot_class": "calculated",
