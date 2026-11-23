@@ -311,6 +311,126 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // ---- Zone links: HA area, media players and presence sensors per zone ----
+    // Suggestions (same HA area, similar name) are shown unticked with their
+    // reason; only what the user ticks is linked. Resolves to the new links
+    // {area_id, media_players, presence_sensors} or undefined on cancel.
+    const ZONE_LINK_FIELDS = [
+        { key: "media_players", label: "Media players", hint: "Speakers / TVs in this zone" },
+        { key: "presence_sensors", label: "Presence sensors", hint: "Cameras (person count), mmWave, occupancy" },
+    ];
+
+    function bpsZoneLinksDialog(zone, payload) {
+        const zid = zone.zone_id || zone.entity_id;
+        const isThis = z => z.zone_id === zid || z.name === zone.entity_id;
+        const info = (payload.zones || []).find(isThis)
+            || { name_matches: {}, suggested_area_id: null };
+        const byId = {};
+        ZONE_LINK_FIELDS.forEach(f => (payload.candidates[f.key] || []).forEach(c => { byId[c.entity_id] = c; }));
+        const areaName = {};
+        (payload.areas || []).forEach(a => { areaName[a.area_id] = a.name; });
+        // Entities another zone already claims: never suggested here.
+        const elsewhere = {};
+        (payload.zones || []).forEach(z => {
+            if (isThis(z)) return;
+            ZONE_LINK_FIELDS.forEach(f => (z[f.key] || []).forEach(e => { elsewhere[e] = z.name; }));
+        });
+        const picked = {};
+        ZONE_LINK_FIELDS.forEach(f => { picked[f.key] = new Set(zone[f.key] || []); });
+
+        return new Promise(resolve => {
+            const overlay = document.createElement("div");
+            overlay.className = "bps-modal-overlay";
+            const dialog = document.createElement("div");
+            dialog.className = "bps-modal bps-links-modal";
+            const suggestedArea = zone.area_id ? null : info.suggested_area_id;
+            const areaOpts = ['<option value="">— No area —</option>']
+                .concat((payload.areas || []).map(a =>
+                    `<option value="${escHtml(a.area_id)}">${escHtml(a.name)}${a.area_id === suggestedArea ? " (suggested)" : ""}</option>`));
+            dialog.innerHTML =
+                `<div class="bps-modal-msg"><b>Link devices — ${escHtml(zone.entity_id)}</b><br>`
+                + `<span class="bps-links-hint">Pick what belongs to this zone. Suggestions come from the HA area and from names; nothing is linked until you tick it.</span></div>`
+                + `<label class="bps-links-label">Home Assistant area</label>`
+                + `<select class="bps-modal-input bps-links-area">${areaOpts.join("")}</select>`
+                + ZONE_LINK_FIELDS.map(f =>
+                    `<div class="bps-links-section" data-field="${f.key}">`
+                    + `<label class="bps-links-label">${f.label} <span class="bps-links-hint">${f.hint}</span></label>`
+                    + `<div class="bps-links-list"></div>`
+                    + `<select class="bps-modal-input bps-links-add"></select></div>`).join("")
+                + `<div class="bps-modal-actions"><button type="button" class="bps-btn bps-btn-outline" data-act="cancel">Cancel</button>`
+                + `<button type="button" class="bps-btn bps-btn-primary" data-act="ok">Apply</button></div>`;
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            const areaSel = dialog.querySelector(".bps-links-area");
+            areaSel.value = zone.area_id || suggestedArea || "";
+
+            const render = () => {
+                const area = areaSel.value || null;
+                ZONE_LINK_FIELDS.forEach(f => {
+                    const sec = dialog.querySelector(`.bps-links-section[data-field="${f.key}"]`);
+                    const rows = [];
+                    const seen = new Set();
+                    const row = (eid, reason, checked) => {
+                        if (seen.has(eid)) return;
+                        seen.add(eid);
+                        const c = byId[eid];
+                        const label = c ? c.name : eid;
+                        rows.push(`<label class="bps-links-row${c ? "" : " bps-links-missing"}">`
+                            + `<input type="checkbox" data-eid="${escHtml(eid)}"${checked ? " checked" : ""}>`
+                            + `<span title="${escHtml(eid)}">${escHtml(label)}</span>`
+                            + (reason ? `<span class="bps-links-tag">${escHtml(reason)}</span>` : "")
+                            + `</label>`);
+                    };
+                    picked[f.key].forEach(eid => row(eid, byId[eid] ? "" : "not found", true));
+                    (payload.candidates[f.key] || []).forEach(c => {
+                        if (area && c.area_id === area && !elsewhere[c.entity_id]) row(c.entity_id, "same area", false);
+                    });
+                    ((info.name_matches || {})[f.key] || []).forEach(m => {
+                        if (!elsewhere[m.entity_id]) row(m.entity_id, `name ${Math.round(m.score * 100)}%`, false);
+                    });
+                    sec.querySelector(".bps-links-list").innerHTML =
+                        rows.join("") || '<span class="bps-links-hint">Nothing linked or suggested.</span>';
+                    const add = sec.querySelector(".bps-links-add");
+                    add.innerHTML = '<option value="">+ Add other…</option>'
+                        + (payload.candidates[f.key] || []).filter(c => !seen.has(c.entity_id)).map(c =>
+                            `<option value="${escHtml(c.entity_id)}">${escHtml(c.name)}`
+                            + `${c.area_id && areaName[c.area_id] ? " · " + escHtml(areaName[c.area_id]) : ""}`
+                            + `${elsewhere[c.entity_id] ? " · in " + escHtml(elsewhere[c.entity_id]) : ""}</option>`).join("");
+                });
+            };
+            render();
+
+            areaSel.addEventListener("change", render);
+            dialog.addEventListener("change", (e) => {
+                const sec = e.target.closest(".bps-links-section");
+                if (!sec) return;
+                const key = sec.getAttribute("data-field");
+                if (e.target.matches('input[type="checkbox"]')) {
+                    const eid = e.target.getAttribute("data-eid");
+                    if (e.target.checked) picked[key].add(eid); else picked[key].delete(eid);
+                } else if (e.target.matches(".bps-links-add") && e.target.value) {
+                    picked[key].add(e.target.value);
+                    render();
+                }
+            });
+            const close = (val) => {
+                overlay.remove();
+                document.removeEventListener("keydown", onKey);
+                resolve(val);
+            };
+            function onKey(e) { if (e.key === "Escape") close(undefined); }
+            document.addEventListener("keydown", onKey);
+            overlay.addEventListener("click", (e) => { if (e.target === overlay) close(undefined); });
+            dialog.querySelector('[data-act="cancel"]').addEventListener("click", () => close(undefined));
+            dialog.querySelector('[data-act="ok"]').addEventListener("click", () => {
+                const out = { area_id: areaSel.value || null };
+                ZONE_LINK_FIELDS.forEach(f => { out[f.key] = Array.from(picked[f.key]); });
+                close(out);
+            });
+        });
+    }
+
     // A modal with one numeric input. Resolves to the entered number, to null
     // when the value is cleared (empty Save), or to undefined on cancel/Esc.
     // Used for the receiver mount height.
@@ -1987,6 +2107,35 @@ document.addEventListener('DOMContentLoaded', async () => {
                 clearCanvas();
                 drawElements();
             });
+            return;
+        }
+        if (event.target.closest('[data-type="zonelinks"]')) {
+            const id = event.target.closest('[data-type="zonelinks"]').getAttribute('data-id');
+            const floor = finalcords.floor.find(f => sameFloorName(f.name, SelMapName));
+            const zone = floor && (floor.zones || []).find(z => (z.zone_id || z.entity_id) === id);
+            if (!zone) return;
+            if (!zone.zone_id) zone.zone_id = createZoneId();  // stable id for the payload lookup
+            (async () => {
+                let payload;
+                try {
+                    const res = await bpsFetch("/api/bps/zone_links");
+                    if (!res.ok) throw new Error(res.status);
+                    payload = await res.json();
+                } catch (e) {
+                    bpsToast("Could not load Home Assistant devices.");
+                    return;
+                }
+                const links = await bpsZoneLinksDialog(zone, payload);
+                if (!links) return;
+                if (links.area_id) zone.area_id = links.area_id; else delete zone.area_id;
+                ZONE_LINK_FIELDS.forEach(f => {
+                    if (links[f.key].length) zone[f.key] = links[f.key]; else delete zone[f.key];
+                });
+                savebuttondiv.appendChild(saveButton);
+                clearCanvas();
+                drawElements();
+                bpsToast(`Links for "${zone.entity_id}" updated — Save Floor Plan to keep them.`);
+            })();
             return;
         }
         if (event.target.closest('[data-type="editzone"]')) {
@@ -3985,6 +4134,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Hatched square — mirrors the grey diagonal hatching a no-go zone gets
         // on the map, and is unmistakably different from the colour-toggle's
         // slashed circle (they used to be two near-identical circles).
+        const linkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>';
         const noGoSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="14" x2="14" y2="3"></line><line x1="9" y1="21" x2="21" y2="9"></line></svg>';
         // Stable per-floor suffix so the two synthetic groups ("No zone" /
         // "Unlinked sub-zones") collapse independently on each floor, like real
@@ -4062,10 +4212,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             const zoneColor = zoneDisplayColor(zone, zi);
             const uncolored = !!zone.uncolored;
             const noGo = !!zone.no_go;
+            const linkCount = (zone.media_players || []).length + (zone.presence_sensors || []).length + (zone.area_id ? 1 : 0);
             const zoneActions = '<span class="bps-zone-actions">'
                 + `<input type="color" class="bps-zone-swatch${uncolored ? ' bps-swatch-off' : ''}" data-type="zonecolor" data-id="${escHtml(zoneDomId)}" value="${colorToHex(zoneColor)}" title="Pick zone colour">`
                 + `<button class="bps-icon-btn" title="${uncolored ? 'Add colour' : 'Remove colour'}" data-type="zonetogglecolor" data-id="${escHtml(zoneDomId)}">${uncolored ? colorOnSvg : colorOffSvg}</button>`
                 + `<button class="bps-icon-btn bps-nogo-btn${noGo ? ' bps-nogo-on' : ''}" title="${noGo ? 'Unmark no-go zone' : 'Mark as no-go (dead space — nothing can be here)'}" data-type="zonetogglenogo" data-id="${escHtml(zoneDomId)}">${noGoSvg}</button>`
+                + `<button class="bps-icon-btn${linkCount ? ' bps-links-on' : ''}" title="Link HA area, media players and presence sensors" data-type="zonelinks" data-id="${escHtml(zoneDomId)}">${linkSvg}</button>`
                 + `<button class="bps-icon-btn" title="Edit zone" data-type="editzone" data-id="${escHtml(zoneDomId)}">${pencilSvg}</button>`
                 + `<button class="bps-icon-btn" title="Remove zone" data-type="removezone" data-id="${escHtml(zoneDomId)}">${trashSvg}</button>`
                 + '</span>';
@@ -5057,6 +5209,194 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     pollCalibration();
 
+    // =================================================================
+    // Settings tab: features, notification tap target, persons + trackers
+    // =================================================================
+    let setData = null;      // last GET payload
+    let setDraft = null;     // settings being edited
+    let setStatusTimer = null;
+
+    function setMarkDirty(dirty = true) {
+        document.getElementById("setDirty").textContent = dirty ? "Unsaved changes" : "";
+    }
+
+    async function loadSettings() {
+        try {
+            const res = await bpsFetch("/api/bps/settings");
+            if (!res.ok) throw new Error(res.status);
+            setData = await res.json();
+        } catch (e) {
+            bpsToast("Could not load BPS settings.");
+            return;
+        }
+        setDraft = JSON.parse(JSON.stringify(setData.settings));
+        document.getElementById("setFollowMe").checked = !!setDraft.features.follow_me;
+        document.getElementById("setSuggestions").checked = !!setDraft.features.suggestions;
+        document.getElementById("setTapPath").value = setDraft.notify.tap_path || "";
+        const t = setDraft.tracking;
+        document.getElementById("setDwell").value = t.dwell_s;
+        document.getElementById("setStill").value = t.still_min;
+        document.getElementById("setMoved").value = t.moved_recent_s;
+        document.getElementById("setMoveM").value = t.move_m;
+        document.getElementById("setStale").value = t.stale_s;
+        renderPersons();
+        setMarkDirty(false);
+    }
+
+    async function refreshSettingsStatus() {
+        try {
+            const res = await bpsFetch("/api/bps/settings");
+            if (!res.ok) return;
+            const fresh = await res.json();
+            setData.status = fresh.status;
+            document.querySelectorAll("[data-set-status]").forEach(el => {
+                const [pid, key] = el.getAttribute("data-set-status").split("|");
+                const st = ((fresh.status[pid] || {}).trackers || {})[key];
+                el.textContent = st || "—";
+                el.className = "bps-links-tag" + (st === "active" ? " bps-set-active" : "");
+            });
+            document.querySelectorAll("[data-set-zone]").forEach(el => {
+                const z = (fresh.status[el.getAttribute("data-set-zone")] || {}).zone;
+                el.textContent = z ? "📍 " + z : "";
+            });
+        } catch (e) { /* next tick */ }
+    }
+
+    function renderPersons() {
+        const host = document.getElementById("setPersons");
+        const ch = setData.choices;
+        if (!ch.people.length) {
+            host.innerHTML = '<p class="bps-links-hint">No people in Home Assistant yet (Settings → People).</p>';
+            return;
+        }
+        const trackerInfo = {};
+        ch.trackers.forEach(t => { trackerInfo[t.key] = t; });
+        const used = new Set();
+        Object.values(setDraft.persons).forEach(p => (p.trackers || []).forEach(t => used.add(t.key)));
+        host.innerHTML = ch.people.map(person => {
+            const pid = person.entity_id;
+            const p = setDraft.persons[pid] || { trackers: [], notify: null };
+            const status = (setData.status[pid] || {});
+            const rows = p.trackers.map((t, i) => {
+                const st = (status.trackers || {})[t.key];
+                const kindOpts = ch.kinds.map(k => `<option value="${k}"${k === t.kind ? " selected" : ""}>${k}</option>`).join("");
+                const chargeOpts = ['<option value="">no charging sensor</option>']
+                    .concat(ch.charging.map(c => `<option value="${escHtml(c)}"${c === t.charging ? " selected" : ""}>${escHtml(c)}</option>`)).join("");
+                return `<div class="bps-set-tracker" data-pid="${escHtml(pid)}" data-idx="${i}">`
+                    + `<span class="bps-set-prio">${i + 1}</span>`
+                    + `<span class="bps-set-key" title="${escHtml(t.key)}">${escHtml(t.key)}${trackerInfo[t.key] ? "" : ' <span class="bps-links-tag">not tracked</span>'}</span>`
+                    + `<select data-set="kind">${kindOpts}</select>`
+                    + `<select data-set="charging">${chargeOpts}</select>`
+                    + `<span class="bps-links-tag${st === "active" ? " bps-set-active" : ""}" data-set-status="${escHtml(pid)}|${escHtml(t.key)}">${escHtml(st || "—")}</span>`
+                    + `<button class="bps-icon-btn" data-set="up" title="Higher priority"${i === 0 ? " disabled" : ""}>↑</button>`
+                    + `<button class="bps-icon-btn" data-set="down" title="Lower priority"${i === p.trackers.length - 1 ? " disabled" : ""}>↓</button>`
+                    + `<button class="bps-icon-btn" data-set="remove" title="Remove">✕</button>`
+                    + `</div>`;
+            }).join("");
+            const sugg = new Set(person.trackers_suggested || []);
+            const addable = ch.trackers.filter(t => !used.has(t.key));
+            addable.sort((a, b) => (sugg.has(b.key) - sugg.has(a.key)) || a.key.localeCompare(b.key));
+            const addOpts = '<option value="">+ Add tracker…</option>' + addable.map(t =>
+                `<option value="${escHtml(t.key)}">${escHtml(t.key)}${sugg.has(t.key) ? " (suggested)" : ""}</option>`).join("");
+            const notifyOpts = [`<option value="">automatic${person.notify_suggested ? " (" + escHtml(person.notify_suggested) + ")" : " (none found)"}</option>`]
+                .concat(ch.notify.map(n => `<option value="${escHtml(n)}"${n === p.notify ? " selected" : ""}>${escHtml(n)}</option>`)).join("");
+            return `<div class="bps-set-person" data-pid="${escHtml(pid)}">`
+                + `<div class="bps-set-person-head"><b>${escHtml(person.name)}</b>`
+                + ` <span class="bps-links-hint">${escHtml(pid)}</span>`
+                + ` <span class="bps-set-zone" data-set-zone="${escHtml(pid)}">${status.zone ? "📍 " + escHtml(status.zone) : ""}</span></div>`
+                + (rows || '<p class="bps-links-hint">No trackers linked.</p>')
+                + `<div class="bps-set-person-foot"><select data-set="add">${addOpts}</select>`
+                + `<label class="bps-links-hint">Notify <select data-set="notify">${notifyOpts}</select></label></div>`
+                + `</div>`;
+        }).join("");
+    }
+
+    function personDraft(pid) {
+        if (!setDraft.persons[pid]) setDraft.persons[pid] = { trackers: [], notify: null };
+        return setDraft.persons[pid];
+    }
+
+    const setPersonsHost = document.getElementById("setPersons");
+    setPersonsHost.addEventListener("change", (e) => {
+        const what = e.target.getAttribute("data-set");
+        const box = e.target.closest("[data-pid]");
+        if (!what || !box) return;
+        const pid = box.getAttribute("data-pid");
+        const p = personDraft(pid);
+        if (what === "add" && e.target.value) {
+            const info = setData.choices.trackers.find(t => t.key === e.target.value) || {};
+            p.trackers.push({ key: e.target.value, kind: info.kind || "tag", charging: info.charging || null });
+            renderPersons();
+        } else if (what === "notify") {
+            p.notify = e.target.value || null;
+        } else if (what === "kind" || what === "charging") {
+            const idx = Number(box.getAttribute("data-idx"));
+            p.trackers[idx][what] = e.target.value || null;
+        }
+        setMarkDirty();
+    });
+    setPersonsHost.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-set]");
+        const box = e.target.closest(".bps-set-tracker");
+        if (!btn || !box) return;
+        const p = personDraft(box.getAttribute("data-pid"));
+        const i = Number(box.getAttribute("data-idx"));
+        const what = btn.getAttribute("data-set");
+        if (what === "remove") p.trackers.splice(i, 1);
+        else if (what === "up" && i > 0) [p.trackers[i - 1], p.trackers[i]] = [p.trackers[i], p.trackers[i - 1]];
+        else if (what === "down" && i < p.trackers.length - 1) [p.trackers[i + 1], p.trackers[i]] = [p.trackers[i], p.trackers[i + 1]];
+        renderPersons();
+        setMarkDirty();
+    });
+    ["setFollowMe", "setSuggestions", "setTapPath", "setDwell", "setStill", "setMoved", "setMoveM", "setStale"]
+        .forEach(id => document.getElementById(id).addEventListener("input", () => setMarkDirty()));
+
+    document.getElementById("setSave").addEventListener("click", async () => {
+        if (!setDraft) return;
+        setDraft.features.follow_me = document.getElementById("setFollowMe").checked;
+        setDraft.features.suggestions = document.getElementById("setSuggestions").checked;
+        setDraft.notify.tap_path = document.getElementById("setTapPath").value.trim();
+        setDraft.tracking = {
+            dwell_s: Number(document.getElementById("setDwell").value),
+            still_min: Number(document.getElementById("setStill").value),
+            moved_recent_s: Number(document.getElementById("setMoved").value),
+            move_m: Number(document.getElementById("setMoveM").value),
+            stale_s: Number(document.getElementById("setStale").value),
+        };
+        // Drop people with nothing configured so the store stays tidy.
+        Object.keys(setDraft.persons).forEach(pid => {
+            const p = setDraft.persons[pid];
+            if (!p.trackers.length && !p.notify) delete setDraft.persons[pid];
+        });
+        try {
+            const res = await bpsFetch("/api/bps/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(setDraft),
+            });
+            if (!res.ok) {
+                bpsToast(res.status === 403 ? "Only an administrator can change BPS settings."
+                    : "Not saved: " + (await res.text()));
+                return;
+            }
+            setData = await res.json();
+            setDraft = JSON.parse(JSON.stringify(setData.settings));
+            renderPersons();
+            setMarkDirty(false);
+            bpsToast("Settings saved.");
+        } catch (e) {
+            bpsToast("Could not save settings.");
+        }
+    });
+
+    function onSettingsTab(active) {
+        clearInterval(setStatusTimer);
+        setStatusTimer = null;
+        if (!active) return;
+        if (!setData) loadSettings();
+        setStatusTimer = setInterval(refreshSettingsStatus, 5000);
+    }
+
     // Tab switching: show one panel at a time. The Map tab is active in the
     // markup so the canvas is visible (and sized) on load; the calibration
     // poll keeps running regardless of which tab is showing.
@@ -5071,6 +5411,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Opening the Debugging tab re-checks the linking snapshot so its live
             // readings are current (they drift as devices move / go out of range).
             if (name === "debugging" && !scannerLinkingLoading) loadScannerLinking();
+            onSettingsTab(name === "settings");
         });
     });
 

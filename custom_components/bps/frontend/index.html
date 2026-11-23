@@ -11,6 +11,7 @@
             <button type="button" class="bps-tab active" data-tab="map" role="tab">Map &amp; Setup</button>
             <button type="button" class="bps-tab" data-tab="calibration" role="tab">Receiver Calibration</button>
             <button type="button" class="bps-tab" data-tab="debugging" role="tab">Debugging</button>
+            <button type="button" class="bps-tab" data-tab="settings" role="tab">Settings</button>
             <button type="button" id="themeToggle" class="bps-theme-toggle" title="Toggle light / dark theme" aria-label="Toggle theme">🌙</button>
         </nav>
 
@@ -269,6 +270,61 @@
                     </span>
                 </div>
                 <div id="debuglinking" class="bps-debug"></div>
+            </div>
+        </section>
+
+        <!-- ============================= SETTINGS ============================= -->
+        <section class="bps-tabpanel" data-tabpanel="settings">
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Features</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Optional features, off by default. Turning one off stops it for everyone in the home.</span>
+                    </span>
+                </div>
+                <label class="bps-switch bps-set-row">
+                    <input type="checkbox" id="setFollowMe">
+                    <span class="bps-slider"></span>
+                    <span><b>Follow me</b> <span class="bps-links-hint">Music follows a person from room to room. Always opt-in per session: the person starts it from a notification or the app.</span></span>
+                </label>
+                <label class="bps-switch bps-set-row">
+                    <input type="checkbox" id="setSuggestions">
+                    <span class="bps-slider"></span>
+                    <span><b>Suggestions</b> <span class="bps-links-hint">Asks yes/no in a notification (e.g. dim the lights when the TV goes on) and learns from the answers.</span></span>
+                </label>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Notifications</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Where the Home Assistant app opens when someone taps a BPS notification. Put a card for open questions on that page, so a question is never lost if the notification is dismissed.</span>
+                    </span>
+                </div>
+                <label class="bps-links-label" for="setTapPath">Open this page on tap</label>
+                <input type="text" id="setTapPath" class="bps-modal-input bps-set-input" placeholder="/lovelace/0">
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Persons</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Link each person to their BPS trackers, best first. The first usable tracker decides the person's zone; one that is charging, not seen, or lying still while a lower one moves is skipped. Result: sensor.bps_person_&lt;name&gt;_zone.</span>
+                    </span>
+                </div>
+                <div id="setPersons"></div>
+                <details class="bps-set-advanced">
+                    <summary>Advanced timing</summary>
+                    <div class="bps-set-grid">
+                        <label>Zone must hold (s)<input type="number" id="setDwell" min="0" max="600" step="1"></label>
+                        <label>Still after (min)<input type="number" id="setStill" min="1" max="240" step="1"></label>
+                        <label>Recent move (s)<input type="number" id="setMoved" min="10" max="3600" step="10"></label>
+                        <label>Move threshold (m)<input type="number" id="setMoveM" min="0.3" max="10" step="0.1"></label>
+                        <label>Not seen after (s)<input type="number" id="setStale" min="10" max="3600" step="10"></label>
+                    </div>
+                </details>
+            </div>
+            <div class="bps-set-actions">
+                <span id="setDirty" class="bps-links-hint"></span>
+                <button type="button" class="bps-btn bps-btn-primary" id="setSave">Save settings</button>
             </div>
         </section>
     </div>

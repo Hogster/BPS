@@ -46,8 +46,14 @@ from .storage import (
     load_bps_data,
     migrate_legacy,
     save_bps_data,
+    get_settings_raw, load_settings, save_settings,
 )
 from .zone_adjust import adjust_zones, adjust_subzones
+from .zone_links import build_zone_links, collect_candidates
+from .persons import (
+    PersonTracker, merge_settings, validate_settings, guess_kind, guess_charging,
+    suggest_trackers, KINDS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1519,6 +1525,8 @@ async def async_setup(hass, config):
             hass.http.register_view(BPSScannerLinkingAPI())
             hass.http.register_view(BPSCordsAPI(hass))
             hass.http.register_view(BPSCalibrationAPI())
+            hass.http.register_view(BPSZoneLinksAPI())
+            hass.http.register_view(BPSSettingsAPI())
             hass.data["bps_views_registered"] = True
 
         config_path = hass.config.path()
@@ -1579,6 +1587,15 @@ async def async_setup(hass, config):
         # a crash can no longer leave a 0-byte layout (issue #104).
         await migrate_legacy(hass)
         await load_bps_data(hass)
+        await load_settings(hass)
+
+        # People: tracker priority -> sensor.bps_person_<id>_zone
+        old_persons = hass.data.get(DOMAIN, {}).get("persons")
+        if old_persons:
+            old_persons.stop()
+        persons = PersonTracker(hass, lambda: merge_settings(get_settings_raw(hass)), DOMAIN)
+        hass.data.setdefault(DOMAIN, {})["persons"] = persons
+        persons.start()
 
         jinja_code = """
         {{
@@ -1601,6 +1618,9 @@ async def async_setup(hass, config):
             update_task = hass.data.pop("bps_update_task", None)
             if update_task:
                 update_task.cancel()
+            persons_rt = hass.data.get(DOMAIN, {}).get("persons")
+            if persons_rt:
+                persons_rt.stop()
             await async_shutdown_calibration(hass)
 
         hass.bus.async_listen_once("homeassistant_stop", handle_homeassistant_stop)
@@ -1663,6 +1683,9 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     update_task = hass.data.pop("bps_update_task", None)
     if update_task:
         update_task.cancel()
+    persons_rt = hass.data.get(DOMAIN, {}).pop("persons", None)
+    if persons_rt:
+        persons_rt.stop()
 
     await async_shutdown_calibration(hass)
 
@@ -1977,6 +2000,100 @@ class BPSScannerLinkingAPI(HomeAssistantView):
             _LOGGER.error(f"beacon_links failed: {e}")
             data["beacons"] = []
         return web.json_response(data)
+
+
+class BPSZoneLinksAPI(HomeAssistantView):
+    """Per-zone links (HA area, media players, presence sensors) + suggestions.
+
+    Read-only: the links themselves are saved with the layout (Save Floor
+    Plan), so this only gathers the HA registries for the panel's dialog.
+    """
+    url = "/api/bps/zone_links"
+    name = "api:bps:zone_links"
+    requires_auth = True
+
+    async def get(self, request):
+        hass = request.app["hass"]
+        try:
+            areas, candidates = collect_candidates(hass)
+            data = build_zone_links(get_bps_data(hass), areas, candidates)
+        except Exception as e:
+            _LOGGER.error(f"zone_links failed: {e}")
+            return web.Response(status=500, text="Failed to collect zone links")
+        return web.json_response(data)
+
+
+class BPSSettingsAPI(HomeAssistantView):
+    """Settings tab: feature switches, notification tap target, persons.
+
+    GET returns the settings, the choices the panel needs (people, BPS
+    trackers, charging sensors, notify services) with suggestions, and the
+    live tracker choice per person. POST (admin only) replaces the settings.
+    """
+    url = "/api/bps/settings"
+    name = "api:bps:settings"
+    requires_auth = True
+
+    async def get(self, request):
+        hass = request.app["hass"]
+        try:
+            return web.json_response(_settings_payload(hass))
+        except Exception as e:
+            _LOGGER.error(f"settings read failed: {e}")
+            return web.Response(status=500, text="Failed to read settings")
+
+    async def post(self, request):
+        hass = request.app["hass"]
+        user = request.get("hass_user")
+        if user is None or not user.is_admin:
+            return web.Response(status=403, text="Admin required")
+        try:
+            data = validate_settings(await request.json())
+        except (ValueError, TypeError) as e:
+            return web.Response(status=400, text=str(e))
+        await save_settings(hass, data)
+        return web.json_response(_settings_payload(hass))
+
+
+def _settings_payload(hass):
+    settings = merge_settings(get_settings_raw(hass))
+    keys = sorted({
+        s.entity_id[len("sensor."):-len("_bps_zone")]
+        for s in hass.states.async_all("sensor")
+        if s.entity_id.endswith("_bps_zone") and not s.entity_id.startswith("sensor.bps_person_")
+    })
+    charging = sorted(
+        [s.entity_id for s in hass.states.async_all("sensor") if s.entity_id.endswith("_battery_state")]
+        + [s.entity_id for s in hass.states.async_all("binary_sensor")
+           if s.attributes.get("device_class") == "battery_charging"])
+    notify = sorted(k for k in hass.services.async_services().get("notify", {}) if k.startswith("mobile_app_"))
+    user_notify = {}
+    for entry in hass.config_entries.async_entries("mobile_app"):
+        uid, dev = entry.data.get("user_id"), entry.data.get("device_name")
+        if uid and dev and f"mobile_app_{slugify(dev)}" in notify:
+            user_notify.setdefault(uid, []).append(f"mobile_app_{slugify(dev)}")
+    people = []
+    for st in sorted(hass.states.async_all("person"), key=lambda s: s.entity_id):
+        name = st.attributes.get("friendly_name") or st.entity_id
+        people.append({
+            "entity_id": st.entity_id,
+            "name": name,
+            "state": st.state,
+            "notify_suggested": (user_notify.get(st.attributes.get("user_id")) or [None])[0],
+            "trackers_suggested": suggest_trackers(name, st.attributes.get("device_trackers") or [], keys),
+        })
+    runtime = hass.data.get(DOMAIN, {}).get("persons")
+    return {
+        "settings": settings,
+        "choices": {
+            "people": people,
+            "trackers": [{"key": k, "kind": guess_kind(k), "charging": guess_charging(k, charging)} for k in keys],
+            "charging": charging,
+            "notify": notify,
+            "kinds": list(KINDS),
+        },
+        "status": dict(runtime.status) if runtime else {},
+    }
 
 
 class BPSMapsListAPI(HomeAssistantView):

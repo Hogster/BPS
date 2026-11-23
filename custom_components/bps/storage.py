@@ -210,3 +210,36 @@ async def _migrate_one(store: Store, legacy: Path, label: str, is_valid) -> None
         return
     _LOGGER.info("Migrated %s from %s into .storage", label, legacy.name)
     await _remove_legacy(legacy)
+
+
+# --- Settings (Settings tab: features, notifications, persons) ---------------
+
+STORAGE_KEY_SETTINGS = "bps_settings"            # -> config/.storage/bps_settings
+
+
+def _settings_store(hass) -> Store:
+    bucket = _bucket(hass)
+    store = bucket.get("_settings_store")
+    if store is None:
+        store = bucket["_settings_store"] = Store(hass, STORAGE_VERSION, STORAGE_KEY_SETTINGS)
+    return store
+
+
+def get_settings_raw(hass):
+    """The cached settings as stored (None before load / on a fresh install)."""
+    return _bucket(hass).get("settings")
+
+
+async def load_settings(hass):
+    try:
+        data = await _settings_store(hass).async_load()
+    except Exception as e:
+        _LOGGER.error("Could not load settings from storage; using defaults: %s", e)
+        data = None
+    _bucket(hass)["settings"] = data
+    return data
+
+
+async def save_settings(hass, data) -> None:
+    await _settings_store(hass).async_save(data)
+    _bucket(hass)["settings"] = data
