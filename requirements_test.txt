@@ -1,7 +1,7 @@
 # Test-only dependencies. The HA runtime is stubbed in tests/conftest.py, so
 # only the genuinely numeric libs the positioning/geometry code runs against
 # are needed, plus the test runner.
-pytest>=7.4
+pytest>=9.2.0
 numpy>=2.0.0
 scipy>=1.16.0
 shapely>=2.0.2
