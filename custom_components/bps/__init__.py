@@ -1,6 +1,7 @@
 import aiofiles
 import aiofiles.os
 import time
+from datetime import timedelta
 from pathlib import Path
 from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
@@ -38,6 +39,7 @@ from .calibration import (
     async_restore_calibration_state,
     async_shutdown_calibration,
     async_start_auto_if_enabled,
+    get_calibration_state,
     refresh_receivers_from_coords,
 )
 from .storage import (
@@ -50,6 +52,8 @@ from .storage import (
 )
 from .zone_adjust import adjust_zones, adjust_subzones
 from .zone_links import build_zone_links, collect_candidates
+from .placement import analyze as analyze_placement
+from .usage import async_setup_usage
 from .persons import (
     PersonTracker, merge_settings, validate_settings, guess_kind, guess_charging,
     suggest_trackers, KINDS,
@@ -1527,6 +1531,7 @@ async def async_setup(hass, config):
             hass.http.register_view(BPSCalibrationAPI())
             hass.http.register_view(BPSZoneLinksAPI())
             hass.http.register_view(BPSSettingsAPI())
+            hass.http.register_view(BPSPlacementAPI())
             hass.data["bps_views_registered"] = True
 
         config_path = hass.config.path()
@@ -1597,6 +1602,15 @@ async def async_setup(hass, config):
         hass.data.setdefault(DOMAIN, {})["persons"] = persons
         persons.start()
 
+        # Zone usage statistics (weights for the placement advisor)
+        old_usage_stop = hass.data.get(DOMAIN, {}).pop("usage_stop", None)
+        if old_usage_stop:
+            await old_usage_stop()
+        try:
+            hass.data.setdefault(DOMAIN, {})["usage_stop"] = await async_setup_usage(hass, DOMAIN)
+        except Exception as e:
+            _LOGGER.warning("Zone usage statistics disabled: %s", e)
+
         jinja_code = """
         {{
             states.sensor
@@ -1621,6 +1635,9 @@ async def async_setup(hass, config):
             persons_rt = hass.data.get(DOMAIN, {}).get("persons")
             if persons_rt:
                 persons_rt.stop()
+            usage_stop = hass.data.get(DOMAIN, {}).pop("usage_stop", None)
+            if usage_stop:
+                await usage_stop()
             await async_shutdown_calibration(hass)
 
         hass.bus.async_listen_once("homeassistant_stop", handle_homeassistant_stop)
@@ -1686,6 +1703,9 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     persons_rt = hass.data.get(DOMAIN, {}).pop("persons", None)
     if persons_rt:
         persons_rt.stop()
+    usage_stop = hass.data.get(DOMAIN, {}).pop("usage_stop", None)
+    if usage_stop:
+        await usage_stop()
 
     await async_shutdown_calibration(hass)
 
@@ -2021,6 +2041,96 @@ class BPSZoneLinksAPI(HomeAssistantView):
             _LOGGER.error(f"zone_links failed: {e}")
             return web.Response(status=500, text="Failed to collect zone links")
         return web.json_response(data)
+
+
+PLACEMENT_HISTORY_DAYS = 14
+
+
+async def _zone_histories(hass, days=PLACEMENT_HISTORY_DAYS):
+    """{entity_id: [(ts, zone), ...]} for every BPS tracker zone sensor.
+
+    Empty when the recorder isn't running; the analysis then weighs all zones
+    equally.
+    """
+    entity_ids = [s.entity_id for s in hass.states.async_all("sensor")
+                  if s.entity_id.endswith("_bps_zone")]
+    if not entity_ids:
+        return {}
+    try:
+        from homeassistant.components.recorder import get_instance, history
+        from homeassistant.util import dt as dt_util
+    except ImportError:
+        return {}
+    if "recorder" not in hass.config.components:
+        return {}
+    flt = getattr(get_instance(hass), "entity_filter", None)
+    if callable(flt):  # many installs exclude the BPS sensors from the recorder
+        entity_ids = [e for e in entity_ids if flt(e)]
+    if not entity_ids:
+        return {}
+    end = dt_util.utcnow()
+    start = end - timedelta(days=days)
+
+    def _read():
+        states = history.get_significant_states(
+            hass, start, end, entity_ids=entity_ids, include_start_time_state=True,
+            significant_changes_only=False, minimal_response=False, no_attributes=True)
+        return {eid: [(st.last_changed.timestamp(), st.state) for st in rows]
+                for eid, rows in states.items()}
+
+    try:
+        return await get_instance(hass).async_add_executor_job(_read)
+    except Exception as e:  # recorder busy / schema change: degrade gracefully
+        _LOGGER.warning("placement: could not read zone history: %s", e)
+        return {}
+
+
+def _map_urls(hass):
+    """floor name -> /local URL of its floor image."""
+    out = {}
+    path = Path(hass.config.path("www/bps_maps"))
+    try:
+        for f in path.iterdir():
+            if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"):
+                out.setdefault(f.stem, f"/local/bps_maps/{f.name}")
+    except OSError:
+        pass
+    return out
+
+
+class BPSPlacementAPI(HomeAssistantView):
+    """Receiver placement advisor: error heat map + best spots for a new receiver.
+
+    Read-only analysis of the saved layout, the receiver-to-receiver
+    calibration and the recorder history of the tracker zone sensors.
+    """
+    url = "/api/bps/placement"
+    name = "api:bps:placement"
+    requires_auth = True
+
+    async def get(self, request):
+        hass = request.app["hass"]
+        try:
+            layout = get_bps_data(hass)
+            cal = get_calibration_state(hass)
+            calib = {"results": dict(cal.get("results") or {}),
+                     "samples": {k: list(v) for k, v in (cal.get("samples") or {}).items()}}
+            t0 = time.monotonic()
+            histories = await _zone_histories(hass)
+            t1 = time.monotonic()
+            maps = await hass.async_add_executor_job(_map_urls, hass)
+            own = hass.data.get(DOMAIN, {}).get("usage")
+            report = await hass.async_add_executor_job(
+                analyze_placement, copy.deepcopy(layout), calib, histories, time.time(),
+                own.summary() if own else None)
+            report["timing_s"] = {"history": round(t1 - t0, 2), "analysis": round(time.monotonic() - t1, 2)}
+            for fl in report["floors"]:
+                fl["image"] = maps.get(fl["name"])
+            report["history_days"] = PLACEMENT_HISTORY_DAYS
+        except Exception as e:
+            _LOGGER.exception("placement analysis failed: %s", e)
+            return web.Response(status=500, text="Placement analysis failed")
+        return web.json_response(report)
 
 
 class BPSSettingsAPI(HomeAssistantView):

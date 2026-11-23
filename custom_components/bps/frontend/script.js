@@ -5397,6 +5397,208 @@ document.addEventListener('DOMContentLoaded', async () => {
         setStatusTimer = setInterval(refreshSettingsStatus, 5000);
     }
 
+    // --- Receiver placement advisor (Receiver Calibration tab) ---------------
+    // Heat map of the expected position error per floor + the best spots for
+    // one or two extra receivers (GET /api/bps/placement, read-only).
+    let plData = null;
+    const plImgCache = {};
+
+    function plColor(err, alpha) {
+        // 0.5 m green -> 2 m yellow -> 3 m orange -> 4 m+ red
+        const t = Math.max(0, Math.min(1, (err - 0.5) / 3.5));
+        const hue = 140 - 140 * t;
+        return `hsla(${hue}, ${70 + 20 * t}%, ${42 + 8 * Math.sin(Math.PI * t)}%, ${alpha})`;
+    }
+
+    function plLoadImage(url) {
+        if (!url) return Promise.resolve(null);
+        if (plImgCache[url]) return Promise.resolve(plImgCache[url]);
+        return new Promise((resolve) => {
+            const im = new Image();
+            im.onload = () => { plImgCache[url] = im; resolve(im); };
+            im.onerror = () => resolve(null);
+            im.src = url;
+        });
+    }
+
+    function plFmtH(h) {
+        if (!h) return "—";
+        return h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} h`;
+    }
+
+    async function plRender() {
+        if (!plData) return;
+        const fl = plData.floors.find(f => f.name === document.getElementById("plFloor").value) || plData.floors[0];
+        const cv = document.getElementById("plCanvas");
+        const body = document.getElementById("plBody");
+        if (!fl || !fl.ok) {
+            body.style.display = "none";
+            document.getElementById("plStatus").textContent =
+                `${fl ? fl.name : "This floor"}: ${fl && fl.reason ? fl.reason : "nothing to analyze"}.`;
+            return;
+        }
+        body.style.display = "";
+        const im = await plLoadImage(fl.image);
+        const g = fl.grid;
+        const W = 2000;
+        const H = im ? Math.round(W * im.height / im.width) : Math.ceil(g.y0 + g.ny * g.step + 40);
+        cv.width = W;
+        cv.height = H;
+        const ctx = cv.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, W, H);
+        if (im) {
+            ctx.drawImage(im, 0, 0, W, H);
+            ctx.fillStyle = "rgba(255,255,255,0.35)";
+            ctx.fillRect(0, 0, W, H);
+        }
+        // heat cells: strong inside zones, faint outside
+        for (let j = 0; j < g.ny; j++) {
+            for (let i = 0; i < g.nx; i++) {
+                const k = j * g.nx + i;
+                ctx.fillStyle = plColor(g.err[k], g.in_zone[k] ? 0.5 : 0.12);
+                ctx.fillRect(g.x0 + i * g.step, g.y0 + j * g.step, g.step + 0.6, g.step + 0.6);
+            }
+        }
+        // zones
+        const showZones = document.getElementById("plShowZones").checked;
+        const byZone = {};
+        fl.zones.forEach(z => { byZone[z.zone] = z; });
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(30,30,30,0.75)";
+        fl.zone_rings.forEach(z => {
+            ctx.beginPath();
+            z.ring.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+            ctx.closePath();
+            ctx.stroke();
+            if (showZones) {
+                const cx = z.ring.reduce((a, p) => a + p[0], 0) / z.ring.length;
+                const cy = z.ring.reduce((a, p) => a + p[1], 0) / z.ring.length;
+                const st = byZone[z.name];
+                const label = st ? `${z.name} · ${st.err_m.toFixed(1)} m` : z.name;
+                ctx.font = "600 30px system-ui, sans-serif";
+                const tw = ctx.measureText(label).width;
+                ctx.fillStyle = "rgba(255,255,255,0.85)";
+                ctx.fillRect(cx - tw / 2 - 8, cy - 22, tw + 16, 40);
+                ctx.fillStyle = "#111";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(label, cx, cy);
+            }
+        });
+        // receivers
+        fl.receivers.forEach(r => {
+            ctx.beginPath();
+            ctx.arc(r.x, r.y, 15, 0, Math.PI * 2);
+            ctx.fillStyle = "hsl(217, 85%, 47%)";
+            ctx.fill();
+            ctx.lineWidth = 5;
+            ctx.strokeStyle = "#fff";
+            ctx.stroke();
+        });
+        // suggested receivers
+        if (document.getElementById("plShowPicks").checked) {
+            fl.picks.forEach((p, i) => {
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.beginPath();
+                for (let k = 0; k < 10; k++) {
+                    const rad = k % 2 ? 17 : 40;
+                    const a = -Math.PI / 2 + k * Math.PI / 5;
+                    ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+                }
+                ctx.closePath();
+                ctx.fillStyle = "hsl(45, 100%, 52%)";
+                ctx.fill();
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = "#111";
+                ctx.stroke();
+                ctx.fillStyle = "#111";
+                ctx.font = "700 26px system-ui, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(String(i + 1), 0, 3);
+                ctx.restore();
+            });
+        }
+
+        // suggestion cards
+        const picks = fl.picks.map((p, i) =>
+            `<div class="bps-pl-pick"><span class="num">${i + 1}</span><b>${escHtml(p.zone)}</b>`
+            + `<b class="big">−${p.gain_pct.toFixed(0)} %</b>`
+            + `${i === 0 ? "Lowers" : "On top of #1, lowers"} the expected error where people spend time on this floor `
+            + `from ${p.weighted_err_before_m.toFixed(1)} m to ${p.weighted_err_after_m.toFixed(1)} m. `
+            + `In ${escHtml(p.zone)} itself: ${p.zone_err_before_m.toFixed(1)} → ${p.zone_err_after_m.toFixed(1)} m.</div>`).join("");
+        document.getElementById("plPicks").innerHTML = picks
+            || '<p class="bps-pl-note">No spot would make a meaningful difference — coverage is already even.</p>';
+
+        // zone table
+        const rows = fl.zones.map(z => {
+            const flapPct = z.visits ? Math.round(100 * z.flaps / z.visits) : null;
+            return `<tr><td><span class="bps-pl-swatch" style="background:${plColor(z.err_m, 1)}"></span>${escHtml(z.zone)}</td>`
+                + `<td class="num">${z.err_m.toFixed(1)} m</td>`
+                + `<td class="num">${z.near_receivers}</td>`
+                + `<td class="num">${z.avg_dist_m.toFixed(1)} m</td>`
+                + `<td class="num">${plFmtH(z.dwell_h)}</td>`
+                + `<td class="num">${z.visits ? `${z.flaps} of ${z.visits}` : "—"}${flapPct !== null && flapPct >= 40 && z.visits >= 5 ? ' <span class="bps-links-tag">jumpy</span>' : ""}</td></tr>`;
+        }).join("");
+        document.getElementById("plZones").innerHTML =
+            '<table class="bps-pl-table"><thead><tr><th>Zone</th>'
+            + '<th title="Average expected position error inside the zone">Expected error</th>'
+            + '<th title="Receivers within 6 m of the zone centre">Receivers ≤ 6 m</th>'
+            + '<th title="Average distance from the zone centre to all receivers on the floor">Avg. distance</th>'
+            + `<th title="Time trackers spent in the zone over the last ${plData.history_days} days">Time spent</th>`
+            + '<th title="Visits shorter than a minute — a sign of position jitter">Short visits</th></tr></thead>'
+            + `<tbody>${rows}</tbody></table>`;
+
+        const zonesHere = new Set(fl.zones.map(z => z.zone));
+        const bounces = (plData.bounces || []).filter(b => zonesHere.has(b.from) || zonesHere.has(b.to)).slice(0, 4);
+        document.getElementById("plBounces").innerHTML = bounces.length
+            ? "Most frequent jumps that came straight back: " + bounces.map(b =>
+                `<b>${escHtml(b.from)} → ${escHtml(b.to)} → ${escHtml(b.from)}</b> (${b.n}×)`).join(", ")
+              + ". A receiver near that boundary, or a longer zone dwell time, makes these go away."
+            : "";
+    }
+
+    async function plRun() {
+        const btn = document.getElementById("plRun");
+        const status = document.getElementById("plStatus");
+        btn.disabled = true;
+        status.textContent = "Analyzing… this takes a few seconds.";
+        try {
+            const res = await bpsFetch("/api/bps/placement");
+            if (!res.ok) throw new Error(res.status);
+            plData = await res.json();
+        } catch (e) {
+            status.textContent = "The analysis failed — see the Home Assistant log.";
+            btn.disabled = false;
+            return;
+        }
+        btn.disabled = false;
+        btn.textContent = "Re-analyze";
+        const sel = document.getElementById("plFloor");
+        const prev = sel.value;
+        sel.innerHTML = plData.floors.map(f => `<option value="${escHtml(f.name)}">${escHtml(f.name)}</option>`).join("");
+        if (plData.floors.some(f => f.name === prev)) sel.value = prev;
+        else if (SelMapName && plData.floors.some(f => f.name === SelMapName)) sel.value = SelMapName;
+        sel.style.display = plData.floors.length > 1 ? "" : "none";
+        const m = plData.model, u = plData.usage;
+        status.innerHTML = (m.calibrated
+                ? `Noise model fitted on ${m.pairs} receiver pairs from the calibration.`
+                : "No receiver calibration yet — using a generic noise model. Run calibration above for wall-aware results.")
+            + " " + (u.dwell_h > 0
+                ? (u.source === "recorder"
+                    ? `Weighted by ${u.dwell_h.toFixed(0)} h of tracker history from the recorder (last ${plData.history_days} days).`
+                    : `Weighted by ${u.dwell_h.toFixed(0)} h of time in zones collected by BPS over ${u.days} day${u.days === 1 ? "" : "s"} (keeps the last 14).`)
+                : "No time-in-zone data yet — all zones weigh the same for now. BPS collects it from today, so re-run in a few days.");
+        plRender();
+    }
+
+    document.getElementById("plRun").addEventListener("click", plRun);
+    document.getElementById("plFloor").addEventListener("change", plRender);
+    document.getElementById("plShowPicks").addEventListener("change", plRender);
+    document.getElementById("plShowZones").addEventListener("change", plRender);
+
     // Tab switching: show one panel at a time. The Map tab is active in the
     // markup so the canvas is visible (and sized) on load; the calibration
     // poll keeps running regardless of which tab is showing.

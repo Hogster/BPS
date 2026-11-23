@@ -258,6 +258,46 @@
                 <div id="calibStatus" class="bps-calib-status"></div>
                 <div id="calibResults" class="bps-calib-matrix"></div>
             </div>
+            <div class="bps-card bps-pl-card" id="placementCard">
+                <div class="bps-section-head">
+                    <h3>Receiver placement</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Shows how precisely BPS can position someone across each floor with the receivers you have, and where one or two extra receivers would help most. Uses your floor plan, the receiver calibration above and the tracker zone history. Nothing is changed.</span>
+                    </span>
+                </div>
+                <p class="bps-pl-lead">Where would one more receiver help most? Red areas are where BPS can't pin people down well; the stars are the best spots for a new receiver, ranked by how much they improve precision <i>where people actually spend time</i>.</p>
+                <div class="bps-calib-controls">
+                    <button type="button" id="plRun" class="bps-btn bps-btn-primary">Analyze</button>
+                    <select id="plFloor" class="bps-input" style="display: none" title="Floor"></select>
+                    <label class="bps-pl-check"><input type="checkbox" id="plShowPicks" checked> Suggested receivers</label>
+                    <label class="bps-pl-check"><input type="checkbox" id="plShowZones" checked> Zone names</label>
+                </div>
+                <div id="plStatus" class="bps-calib-status"></div>
+                <div id="plBody" style="display: none">
+                    <div class="bps-pl-map">
+                        <canvas id="plCanvas"></canvas>
+                        <div class="bps-pl-legend">
+                            <span>Expected error</span>
+                            <span class="bps-pl-scale"></span>
+                            <span class="bps-pl-scale-labels"><span>&lt; 1 m</span><span>2 m</span><span>3 m</span><span>4 m +</span></span>
+                            <span class="bps-pl-key"><i class="bps-pl-dot"></i>receiver</span>
+                            <span class="bps-pl-key"><i class="bps-pl-star">★</i>suggested new receiver</span>
+                        </div>
+                    </div>
+                    <div id="plPicks" class="bps-pl-picks"></div>
+                    <h4 class="bps-pl-h4">Zones, worst first</h4>
+                    <div id="plZones" class="bps-calib-matrix"></div>
+                    <div id="plBounces" class="bps-pl-note"></div>
+                    <details class="bps-pl-how">
+                        <summary>How is this calculated?</summary>
+                        <p><b>Distance.</b> A receiver's distance estimate is off by a roughly fixed <i>fraction</i> of the distance, so far-away receivers add little. How big that fraction is comes from your own receiver calibration: receivers measure each other at known distances, which captures walls, floors and mounting. A receiver whose measurements are consistently worse than the rest gets less weight.</p>
+                        <p><b>Geometry.</b> Being close to receivers is not enough; they need to surround you. Three receivers in a row on one side give a poor fix even when they are close, much like GPS satellites bunched in one part of the sky. The map combines distance, number of receivers in range and their spread around each point into one expected error.</p>
+                        <p><b>Where people are.</b> Each zone is weighted by how long trackers stayed there (recorder history of the tracker zone sensors), so a better fix in the kitchen counts more than in a storage room. Short visits that bounce straight back to the previous zone are listed as a reality check: they are what imprecision looks like in daily use.</p>
+                        <p><b>Suggestions.</b> A virtual receiver is tried at every metre inside the zones; the spot that lowers the time-weighted error most wins, then the best second spot given the first. Stars can land in a spot that's impractical (a balcony inside a zone, the middle of a room): use the nearest wall with power.</p>
+                        <p><b>Reading the numbers.</b> The metres come from a simplified model and are on the pessimistic side; the ranking and the relative improvement are what to act on. Re-run after moving or adding a receiver and recalibrating.</p>
+                    </details>
+                </div>
+            </div>
         </section>
 
         <!-- ============================ DEBUGGING ============================ -->
