@@ -1,5 +1,5 @@
 """Zone link suggestions (pure helpers, no HA)."""
-from custom_components.bps.zone_links import (
+from bps.zone_links import (
     best_area, build_zone_links, links_for_zone, name_matches, similarity,
 )
 
@@ -63,7 +63,7 @@ def test_links_for_zone_by_normalized_name():
 
 
 def test_presence_filter_skips_non_person_detections():
-    from custom_components.bps.zone_links import _is_presence
+    from bps.zone_links import _is_presence
     assert _is_presence("binary_sensor.camera_kitchen_person_occupancy", "occupancy", None)
     assert not _is_presence("binary_sensor.camera_kitchen_cat_occupancy", "occupancy", None)
     assert not _is_presence("binary_sensor.camera_kitchen_all_occupancy", "occupancy", None)

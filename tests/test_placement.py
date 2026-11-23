@@ -1,7 +1,7 @@
 """Receiver placement advisor (pure numpy/shapely, no HA)."""
 import numpy as np
 
-from custom_components.bps.placement import (
+from bps.placement import (
     DEFAULT_A, analyze, analyze_floor, error_field, fit_noise_model, usage_from_history,
 )
 
@@ -93,7 +93,7 @@ def test_floor_without_scale_is_reported_not_crashing():
 
 
 def test_own_usage_stats_flaps_and_bounces():
-    from custom_components.bps.usage import UsageStats
+    from bps.usage import UsageStats
     u = UsageStats()
     t0 = 1_800_000_000
     u.feed("sensor.a_bps_zone", "Kitchen", t0)

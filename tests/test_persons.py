@@ -1,7 +1,7 @@
 """Person tracker choice, dwell and settings validation (pure, no HA)."""
 import pytest
 
-from custom_components.bps.persons import (
+from bps.persons import (
     DEFAULT_SETTINGS, Dwell, guess_charging, guess_kind, merge_settings,
     pick_tracker, suggest_trackers, validate_settings,
 )
