@@ -3392,3 +3392,12 @@ input[type="checkbox"] { accent-color: hsl(var(--sidebar-primary)); }
 .bps-pl-how { margin-top: 14px; font-size: 13px; line-height: 1.55; max-width: 820px; }
 .bps-pl-how summary { cursor: pointer; font-weight: 600; }
 .bps-pl-how p { margin: 8px 0; }
+
+.bps-set-help { margin: 10px 0 4px; line-height: 1.45; }
+.bps-set-help code, .bps-set-code pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.bps-set-code { position: relative; margin-top: 6px; }
+.bps-set-code pre {
+    margin: 0; padding: 12px; overflow-x: auto; font-size: 12px; line-height: 1.4;
+    background: rgba(127, 127, 127, 0.12); border-radius: 8px; white-space: pre;
+}
+.bps-set-code #setCopyYaml { position: absolute; top: 8px; right: 8px; }

@@ -1,0 +1,24 @@
+suggestion_answer:
+  name: Answer suggestion
+  description: Answer the open BPS suggestion (sensor.bps_suggestion). The person is the user who calls it, e.g. by pressing a dashboard button.
+  fields:
+    answer:
+      name: Answer
+      description: yes runs it, no skips it this time, never stops asking, undo reverts the last automatic run.
+      required: true
+      example: "yes"
+      selector:
+        select:
+          options:
+            - "yes"
+            - "no"
+            - "never"
+            - "undo"
+    person:
+      name: Person
+      description: Answer on behalf of this person (for automations). Leave empty to use the calling user.
+      required: false
+      example: "person.erik"
+      selector:
+        entity:
+          domain: person

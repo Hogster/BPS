@@ -1504,6 +1504,45 @@ def find_sub_zone_for_point(data, entity, floor_name, point):
     return "unknown", None
 
 
+SUGGESTION_ANSWERS = ("yes", "no", "never", "undo")
+
+
+def person_for_user(hass, user_id):
+    """object_id of the person linked to this HA user, or None."""
+    if not user_id:
+        return None
+    for st in hass.states.async_all("person"):
+        if st.attributes.get("user_id") == user_id:
+            return st.entity_id.split(".", 1)[1]
+    return None
+
+
+def _register_services(hass):
+    """bps.suggestion_answer: answer the open suggestion from a dashboard card.
+
+    The person is the HA user who pressed the button (or `person` from an
+    automation). Fired on as a `bps_suggestion_answer` event, which the
+    suggestion engine listens to, so the dashboard YAML stays the same when
+    the engine moves into BPS.
+    """
+    async def _answer(call):
+        answer = str(call.data.get("answer") or "").lower()
+        if answer not in SUGGESTION_ANSWERS:
+            _LOGGER.warning("bps.suggestion_answer: unknown answer %r", answer)
+            return
+        person = str(call.data.get("person") or "").removeprefix("person.") or \
+            person_for_user(hass, call.context.user_id)
+        if not person:
+            _LOGGER.warning("bps.suggestion_answer: no person linked to the calling user")
+            return
+        hass.bus.async_fire("bps_suggestion_answer",
+                            {"person": person, "answer": answer, "key": call.data.get("key")},
+                            context=call.context)
+
+    if not hass.services.has_service(DOMAIN, "suggestion_answer"):
+        hass.services.async_register(DOMAIN, "suggestion_answer", _answer)
+
+
 async def async_setup(hass, config):
     """Set up the BPS integration."""
     _LOGGER.info("BPS integration initierad.")
@@ -1513,6 +1552,8 @@ async def async_setup(hass, config):
         return True  # Abort if already running
 
     hass.data["bps_initialized"] = True  # Set flag
+
+    _register_services(hass)
 
     async def initialize_bps():
         """Initialize the BPS component"""

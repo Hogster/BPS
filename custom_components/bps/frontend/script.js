@@ -5399,6 +5399,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    document.getElementById("setCopyYaml").addEventListener("click", async () => {
+        const text = document.getElementById("setCardYaml").textContent;
+        try {
+            await navigator.clipboard.writeText(text);
+            bpsToast("Card YAML copied.");
+        } catch (e) {
+            // Clipboard API can be blocked in the panel iframe: select instead.
+            const r = document.createRange();
+            r.selectNodeContents(document.getElementById("setCardYaml"));
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+            bpsToast("Press Ctrl/Cmd+C to copy.");
+        }
+    });
+
     function onSettingsTab(active) {
         clearInterval(setStatusTimer);
         setStatusTimer = null;

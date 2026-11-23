@@ -350,6 +350,52 @@
                 </div>
                 <label class="bps-links-label" for="setTapPath">Open this page on tap</label>
                 <input type="text" id="setTapPath" class="bps-modal-input bps-set-input" placeholder="/lovelace/0">
+                <p class="bps-links-hint bps-set-help">BPS asks its questions as notifications in the Home Assistant app. A dismissed or missed notification must not lose the question, so BPS also keeps the open question in <code>sensor.bps_suggestion</code> (state <code>ask</code> while a question waits, with <code>title</code> and <code>text</code>). Add the card below to the page above: it only shows while a question is open, and the buttons answer as the person who presses them.</p>
+                <details class="bps-set-advanced">
+                    <summary>Dashboard card (YAML)</summary>
+                    <p class="bps-links-hint">Dashboard → Edit → Add card → Manual, paste, save.</p>
+                    <div class="bps-set-code">
+                        <button type="button" class="bps-btn" id="setCopyYaml">Copy</button>
+                        <pre id="setCardYaml">type: conditional
+conditions:
+  - condition: state
+    entity: sensor.bps_suggestion
+    state: ask
+card:
+  type: vertical-stack
+  cards:
+    - type: markdown
+      content: |-
+        ### {{ state_attr('sensor.bps_suggestion', 'title') }}
+        {{ state_attr('sensor.bps_suggestion', 'text') }}
+    - type: horizontal-stack
+      cards:
+        - type: button
+          name: "Yes"
+          icon: mdi:check
+          tap_action:
+            action: perform-action
+            perform_action: bps.suggestion_answer
+            data:
+              answer: "yes"
+        - type: button
+          name: "No"
+          icon: mdi:close
+          tap_action:
+            action: perform-action
+            perform_action: bps.suggestion_answer
+            data:
+              answer: "no"
+        - type: button
+          name: Don't ask again
+          icon: mdi:cancel
+          tap_action:
+            action: perform-action
+            perform_action: bps.suggestion_answer
+            data:
+              answer: never</pre>
+                    </div>
+                </details>
             </div>
             <div class="bps-card">
                 <div class="bps-section-head">
