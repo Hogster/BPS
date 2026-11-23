@@ -20,6 +20,10 @@ TEXTS = {
         "follow_title": "Follow me",
         "follow_off": "Follow me is turned off in BPS Settings.",
         "follow_nothing": "No music is playing where you are.",
+        "sensor_follow": "BPS follow me {}",
+        "sensor_suggestion": "BPS suggestion",
+        "sensor_zone": "BPS people {}",
+        "people": "people",
     },
     "sv": {
         "yes": "Ja",
@@ -34,6 +38,10 @@ TEXTS = {
         "follow_title": "Följ mig",
         "follow_off": "Följ mig är avstängt i BPS-inställningarna.",
         "follow_nothing": "Ingen musik spelar där du är.",
+        "sensor_follow": "BPS följ mig {}",
+        "sensor_suggestion": "BPS förslag",
+        "sensor_zone": "BPS personer {}",
+        "people": "personer",
     },
 }
 

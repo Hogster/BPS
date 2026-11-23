@@ -113,7 +113,7 @@ class FollowMe:
         zone = self.home.zone_of_person(person)
         eid = f"sensor.bps_follow_{person}"
         self.hass.states.async_set(eid, self.state_of(person), {
-            "friendly_name": f"BPS follow me {info.get('name', person)}",
+            "friendly_name": text(self.hass, "sensor_follow").format(info.get("name", person)),
             "icon": "mdi:music-note-plus", "person": info.get("person"), "zone": zone,
             "speaker": self.home.speaker_for_zone(zone)})
         self._published.add(eid)

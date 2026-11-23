@@ -233,9 +233,10 @@ class ZoneCounts:
             unknown = max(0, self.home.sensed_count(zone, now) - len(known)) if sensors else 0
             eid = f"sensor.bps_zone_{slug(zone)}"
             seen.add(eid)
+            from .texts import text
             hass.states.async_set(eid, len(known) + unknown, {
-                "friendly_name": f"BPS {zone}", "icon": "mdi:account-group",
-                "unit_of_measurement": "people", "zone": zone,
+                "friendly_name": text(hass, "sensor_zone").format(zone), "icon": "mdi:account-group",
+                "unit_of_measurement": text(hass, "people"), "zone": zone,
                 "known": known, "unknown": unknown, "sensors": sensors})
         for eid in self._published - seen:
             hass.states.async_remove(eid)

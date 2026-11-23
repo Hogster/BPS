@@ -1,0 +1,121 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "BLE Positioning System",
+        "description": "Set up BPS. Floor plans, zones and receivers are configured in the BPS panel in the sidebar."
+      }
+    },
+    "abort": {
+      "already_configured": "BPS is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "BPS options",
+        "data": {
+          "show_sidebar_panel": "Show the BPS panel in the sidebar"
+        }
+      }
+    }
+  },
+  "services": {
+    "suggestion_answer": {
+      "name": "Answer suggestion",
+      "description": "Answer the open BPS suggestion (sensor.bps_suggestion). The person is the user who calls it, e.g. by pressing a dashboard button.",
+      "fields": {
+        "answer": {
+          "name": "Answer",
+          "description": "yes runs it, no skips it this time, never stops asking, undo reverts the last automatic run."
+        },
+        "person": {
+          "name": "Person",
+          "description": "Answer on behalf of this person (for automations). Leave empty to use the calling user."
+        }
+      }
+    },
+    "follow_me_start": {
+      "name": "Start follow me",
+      "description": "Music starts following the person who calls it (e.g. by pressing a dashboard button) from room to room. Needs Follow me on in BPS Settings.",
+      "fields": {
+        "person": {
+          "name": "Person",
+          "description": "Start it for this person (for automations). Leave empty to use the calling user."
+        }
+      }
+    },
+    "follow_me_stop": {
+      "name": "Stop follow me",
+      "description": "Music stops following the person who calls it.",
+      "fields": {
+        "person": {
+          "name": "Person",
+          "description": "Stop it for this person (for automations). Leave empty to use the calling user."
+        }
+      }
+    },
+    "suggest": {
+      "name": "Suggest",
+      "description": "Ask the people BPS sees in a zone whether to run an action (notification with Yes / No / Don't ask again, plus sensor.bps_suggestion for a dashboard card). BPS learns per person; 3 yes in a row and it runs automatically next time, with an Undo button.",
+      "fields": {
+        "id": {
+          "name": "ID",
+          "description": "Stable key for this suggestion; answers are learned per ID."
+        },
+        "zone": {
+          "name": "Zone",
+          "description": "BPS zone whose people are asked."
+        },
+        "title": {
+          "name": "Title",
+          "description": ""
+        },
+        "message": {
+          "name": "Question",
+          "description": ""
+        },
+        "action": {
+          "name": "Action",
+          "description": "Script, scene or automation to run on yes."
+        },
+        "done_message": {
+          "name": "Done message",
+          "description": "Shown when it runs automatically."
+        },
+        "unknown_message": {
+          "name": "Question when only unidentified people are in the zone",
+          "description": "When room sensors see someone without a tracker (kids, guests), ask the people at home with this text instead. Never runs automatically."
+        },
+        "undo_entities": {
+          "name": "Undo entities",
+          "description": "Snapshot these before running, so Undo can restore them."
+        },
+        "once_per": {
+          "name": "At most once per",
+          "description": "evening (resets at noon), day, hour or none."
+        }
+      }
+    },
+    "suggestion_clear": {
+      "name": "Clear suggestion",
+      "description": "The moment has passed (e.g. the TV went off); remove the open question.",
+      "fields": {
+        "id": {
+          "name": "ID",
+          "description": ""
+        }
+      }
+    },
+    "suggestion_reask": {
+      "name": "Ask again",
+      "description": "Forget that a suggestion was already asked in this period (for testing).",
+      "fields": {
+        "id": {
+          "name": "ID",
+          "description": "Leave empty for all suggestions."
+        }
+      }
+    }
+  }
+}

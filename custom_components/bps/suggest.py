@@ -250,7 +250,7 @@ class Suggestions:
 
     # --- open questions (dashboard) ---------------------------------------------
     def publish(self):
-        attrs = {"friendly_name": "BPS suggestion", "icon": "mdi:lightbulb-question-outline"}
+        attrs = {"friendly_name": text(self.hass, "sensor_suggestion"), "icon": "mdi:lightbulb-question-outline"}
         if not self.open:
             self.hass.states.async_set("sensor.bps_suggestion", "none", attrs)
             return

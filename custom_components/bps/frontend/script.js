@@ -1,4 +1,9 @@
 document.addEventListener('DOMContentLoaded', async () => {
+    // Translate a whole sentence (see i18n.js); {} are filled in order.
+    function bpsTr(text, ...args) {
+        if (window.bpsT) return window.bpsT(text, ...args);
+        return args.length ? text.replace(/\{\}/g, () => String(args.shift())) : text;
+    }
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
 
@@ -24,6 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener("message", (e) => {
         if (e.origin !== window.location.origin) return;
         if (e.data && e.data.type === "bps-auth" && e.data.token) {
+            if (e.data.language && window.bpsI18n) window.bpsI18n.choose(e.data.language);
             const isNew = e.data.token !== bpsAuthToken;
             bpsAuthToken = e.data.token;
             if (isNew) { _authFailUntil = 0; _authBackoff = 0; _authFails = 0; _authDeadToken = null; } // fresh token: retry now
@@ -5067,19 +5073,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             else calibResults.innerHTML = '';
             // Set the status line AFTER rendering the result, which writes its
             // own summary into it; the auto line carries the result summary too.
-            let line = `Auto calibration running · ${pairs} receiver pairs in the window`;
+            let line = bpsTr("Auto calibration running · {} receiver pairs in the window", pairs);
             if (status.error) line += ` · ${status.error}`;
-            else if (status.last_solved_at) line += ` · last solve ${status.last_solved_at}`;
-            else line += ' · first solve after a few minutes of data';
+            else if (status.last_solved_at) line += " " + bpsTr("· last solve {}", status.last_solved_at);
+            else line += " " + bpsTr("· first solve after a few minutes of data");
             if (result) {
-                line += ` · floor ${result.floor}: ${result.pairs_used} pairs used, `
-                    + `typical error ×${result.error_factor_before} → ×${result.error_factor_after}`;
+                line += " " + bpsTr("· floor {}: {} pairs used,", result.floor, result.pairs_used) + " "
+                    + bpsTr("typical error ×{} → ×{}", result.error_factor_before, result.error_factor_after);
                 // Keep the missing-receiver pointer (issue #63) — this line
                 // replaces the one renderCalibrationResult just wrote. Same
                 // reconciled lists so a replaced receiver isn't counted.
                 const m = calibMissingNow(result);
                 const missing = m.missUnmatched.length + m.missNoData.length;
-                if (missing) line += ` · ${missing} placed receiver${missing > 1 ? "s" : ""} missing — see below`;
+                if (missing) line += " " + bpsTr(missing > 1 ? "· {} placed receivers missing — see below" : "· {} placed receiver missing — see below", missing);
             }
             calibStatus.textContent = line;
             return;
@@ -5089,8 +5095,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const left = status.seconds_left || 0;
             const done = total - left;
             calibStatus.textContent =
-                `Sampling floor ${status.floor}… ${Math.floor(done / 60)}:${String(done % 60).padStart(2, '0')}`
-                + ` of ${Math.floor(total / 60)} min · ${pairs} receiver pairs heard so far.`
+                bpsTr("Sampling floor {}… {}:{}", status.floor, Math.floor(done / 60), String(done % 60).padStart(2, '0'))
+                + " " + bpsTr("of {} min · {} receiver pairs heard so far.", Math.floor(total / 60), pairs)
                 + (pairs ? '' : calibNoPairsHint(status.last_dump));
             return;
         }
@@ -5597,9 +5603,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         const picks = fl.picks.map((p, i) =>
             `<div class="bps-pl-pick"><span class="num">${i + 1}</span><b>${escHtml(p.zone)}</b>`
             + `<b class="big">−${p.gain_pct.toFixed(0)} %</b>`
-            + `${i === 0 ? "Lowers" : "On top of #1, lowers"} the expected error where people spend time on this floor `
-            + `from ${p.weighted_err_before_m.toFixed(1)} m to ${p.weighted_err_after_m.toFixed(1)} m. `
-            + `In ${escHtml(p.zone)} itself: ${p.zone_err_before_m.toFixed(1)} → ${p.zone_err_after_m.toFixed(1)} m.</div>`).join("");
+            + escHtml(bpsTr(i === 0
+                ? "Lowers the expected error where people spend time on this floor from {} m to {} m."
+                : "On top of #1, lowers the expected error where people spend time on this floor from {} m to {} m.",
+                p.weighted_err_before_m.toFixed(1), p.weighted_err_after_m.toFixed(1)))
+            + " " + escHtml(bpsTr("In {} itself: {} → {} m.", p.zone, p.zone_err_before_m.toFixed(1), p.zone_err_after_m.toFixed(1)))
+            + `</div>`).join("");
         document.getElementById("plPicks").innerHTML = picks
             || '<p class="bps-pl-note">No spot would make a meaningful difference — coverage is already even.</p>';
 
@@ -5611,7 +5620,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 + `<td class="num">${z.near_receivers}</td>`
                 + `<td class="num">${z.avg_dist_m.toFixed(1)} m</td>`
                 + `<td class="num">${plFmtH(z.dwell_h)}</td>`
-                + `<td class="num">${z.visits ? `${z.flaps} of ${z.visits}` : "—"}${flapPct !== null && flapPct >= 40 && z.visits >= 5 ? ' <span class="bps-links-tag">jumpy</span>' : ""}</td></tr>`;
+                + `<td class="num">${z.visits ? escHtml(bpsTr("{} of {}", z.flaps, z.visits)) : "—"}${flapPct !== null && flapPct >= 40 && z.visits >= 5 ? ' <span class="bps-links-tag">jumpy</span>' : ""}</td></tr>`;
         }).join("");
         document.getElementById("plZones").innerHTML =
             '<table class="bps-pl-table"><thead><tr><th>Zone</th>'
@@ -5625,9 +5634,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const zonesHere = new Set(fl.zones.map(z => z.zone));
         const bounces = (plData.bounces || []).filter(b => zonesHere.has(b.from) || zonesHere.has(b.to)).slice(0, 4);
         document.getElementById("plBounces").innerHTML = bounces.length
-            ? "Most frequent jumps that came straight back: " + bounces.map(b =>
+            ? escHtml(bpsTr("Most frequent jumps that came straight back:")) + " " + bounces.map(b =>
                 `<b>${escHtml(b.from)} → ${escHtml(b.to)} → ${escHtml(b.from)}</b> (${b.n}×)`).join(", ")
-              + ". A receiver near that boundary, or a longer zone dwell time, makes these go away."
+              + ". " + escHtml(bpsTr("A receiver near that boundary, or a longer zone dwell time, makes these go away."))
             : "";
     }
 
@@ -5646,7 +5655,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         btn.disabled = false;
-        btn.textContent = "Re-analyze";
+        btn.textContent = bpsTr("Re-analyze");
         const sel = document.getElementById("plFloor");
         const prev = sel.value;
         sel.innerHTML = plData.floors.map(f => `<option value="${escHtml(f.name)}">${escHtml(f.name)}</option>`).join("");
@@ -5654,14 +5663,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         else if (SelMapName && plData.floors.some(f => f.name === SelMapName)) sel.value = SelMapName;
         sel.style.display = plData.floors.length > 1 ? "" : "none";
         const m = plData.model, u = plData.usage;
-        status.innerHTML = (m.calibrated
-                ? `Noise model fitted on ${m.pairs} receiver pairs from the calibration.`
-                : "No receiver calibration yet — using a generic noise model. Run calibration above for wall-aware results.")
+        status.textContent = (m.calibrated
+                ? bpsTr("Noise model fitted on {} receiver pairs from the calibration.", m.pairs)
+                : bpsTr("No receiver calibration yet — using a generic noise model. Run calibration above for wall-aware results."))
             + " " + (u.dwell_h > 0
                 ? (u.source === "recorder"
-                    ? `Weighted by ${u.dwell_h.toFixed(0)} h of tracker history from the recorder (last ${plData.history_days} days).`
-                    : `Weighted by ${u.dwell_h.toFixed(0)} h of time in zones collected by BPS over ${u.days} day${u.days === 1 ? "" : "s"} (keeps the last 14).`)
-                : "No time-in-zone data yet — all zones weigh the same for now. BPS collects it from today, so re-run in a few days.");
+                    ? bpsTr("Weighted by {} h of tracker history from the recorder (last {} days).", u.dwell_h.toFixed(0), plData.history_days)
+                    : bpsTr(u.days === 1 ? "Weighted by {} h of time in zones collected by BPS over {} day (keeps the last 14)."
+                        : "Weighted by {} h of time in zones collected by BPS over {} days (keeps the last 14).", u.dwell_h.toFixed(0), u.days))
+                : bpsTr("No time-in-zone data yet — all zones weigh the same for now. BPS collects it from today, so re-run in a few days."));
         plRender();
     }
 
@@ -5719,42 +5729,50 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderLearned();
     }
 
+    const T = (text, ...args) => (window.bpsT ? window.bpsT(text, ...args)
+        : (args.length ? text.replace(/\{\}/g, () => String(args.shift())) : text));
+
     function renderLearned() {
         const d = lnData;
         const L = d.learning;
         const pct = Math.min(100, Math.round(100 * L.days / L.target));
+        const left = L.target - L.days;
         document.getElementById("lnProgress").innerHTML = !d.history_enabled
-            ? '<p class="bps-links-hint">History is turned off (Settings → Features), so BPS is not learning.</p>'
-            : `<div><b>${L.ready ? "Ready" : `Learning: ${L.days} of ${L.target} days`}</b></div>
+            ? `<p class="bps-links-hint">${lnEsc(T("History is turned off (Settings → Features), so BPS is not learning."))}</p>`
+            : `<div><b>${lnEsc(L.ready ? T("Ready") : T("Learning: {} of {} days", L.days, L.target))}</b></div>
                <div class="bps-ln-bar"><span style="width:${pct}%"></span></div>
-               <p class="bps-links-hint">${L.ready
-                   ? `${L.days} days with data in the last 60 days. Enough to find routines.`
-                   : `${L.target - L.days} more day${L.target - L.days === 1 ? "" : "s"} with someone at home before BPS suggests routines on its own.`}
-               ${L.first_day ? ` Data since ${lnEsc(L.first_day)}.` : ""}</p>`;
+               <p class="bps-links-hint">${lnEsc(L.ready
+                   ? T("{} days with data in the last 60 days. Enough to find routines.", L.days)
+                   : T(left === 1 ? "{} more day with someone at home before BPS suggests routines on its own."
+                       : "{} more days with someone at home before BPS suggests routines on its own.", left))}
+               ${L.first_day ? lnEsc(T("Data since {}.", L.first_day)) : ""}</p>`;
 
         const sBox = document.getElementById("lnSuggestions");
         if (!d.suggestions.length) {
-            sBox.innerHTML = `<p class="bps-links-hint">No suggestions yet.${d.features.suggestions ? ""
-                : " Suggestions are turned off in Settings → Features."}</p>`;
+            sBox.innerHTML = `<p class="bps-links-hint">${lnEsc(T("No suggestions yet."))}${d.features.suggestions ? ""
+                : " " + lnEsc(T("Suggestions are turned off in Settings → Features."))}</p>`;
         } else {
             sBox.innerHTML = d.suggestions.map((sg) => {
                 const rows = sg.people.map((r) => {
                     const btns = [];
-                    if (r.mode === "auto") btns.push(["stop_auto", "Ask instead"]);
-                    if (r.mode === "never") btns.push(["allow", "Allow again"]);
-                    if (r.mode !== "never") btns.push(["never", "Never"]);
-                    btns.push(["forget", "Forget"]);
+                    if (r.mode === "auto") btns.push(["stop_auto", T("Ask instead")]);
+                    if (r.mode === "never") btns.push(["allow", T("Allow again")]);
+                    if (r.mode !== "never") btns.push(["never", T("Never")]);
+                    btns.push(["forget", T("Forget")]);
+                    let stats = T("{} yes · {} no", r.yes, r.no);
+                    if (r.mode === "ask" && r.streak) stats += T(" · {} of 3 yes in a row", r.streak);
+                    if (r.last_asked) stats += T(" · last asked {}", r.last_asked.replace("T", " ").slice(0, 16));
                     return `<div class="bps-ln-row">
-                        <span class="bps-ln-who">${lnEsc(lnName(r.person))}${r.unknown ? " <span class=\"bps-links-hint\">(when someone unidentified is in the room)</span>" : ""}</span>
-                        <span class="bps-ln-mode ${lnEsc(r.mode)}">${LN_MODE[r.mode] || lnEsc(r.mode)}</span>
-                        <span class="bps-ln-stats">${r.yes} yes · ${r.no} no${r.mode === "ask" && r.streak ? ` · ${r.streak} of 3 yes in a row` : ""}${r.last_asked ? ` · last asked ${lnEsc(r.last_asked.replace("T", " ").slice(0, 16))}` : ""}</span>
-                        ${btns.map(([a, label]) => `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-action="${a}" data-ln-person="${lnEsc(r.person)}" data-ln-key="${lnEsc(r.key)}">${label}</button>`).join("")}
+                        <span class="bps-ln-who">${lnEsc(lnName(r.person))}${r.unknown ? ` <span class="bps-links-hint">${lnEsc(T("(when someone unidentified is in the room)"))}</span>` : ""}</span>
+                        <span class="bps-ln-mode ${lnEsc(r.mode)}">${lnEsc(T(LN_MODE[r.mode] || r.mode))}</span>
+                        <span class="bps-ln-stats">${lnEsc(stats)}</span>
+                        ${btns.map(([a, label]) => `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-action="${a}" data-ln-person="${lnEsc(r.person)}" data-ln-key="${lnEsc(r.key)}">${lnEsc(label)}</button>`).join("")}
                     </div>`;
                 }).join("");
                 return `<div class="bps-ln-sugg">
                     <div class="bps-ln-sugg-head"><b>${lnEsc(sg.title)}</b>${sg.zone ? `<span class="bps-links-tag">${lnEsc(sg.zone)}</span>` : ""}
                     ${sg.message ? `<span class="bps-links-hint">${lnEsc(sg.message)}</span>` : ""}</div>
-                    ${rows || '<p class="bps-links-hint">Nobody has been asked yet.</p>'}
+                    ${rows || `<p class="bps-links-hint">${lnEsc(T("Nobody has been asked yet."))}</p>`}
                 </div>`;
             }).join("");
         }
@@ -5763,28 +5781,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         const ppl = Object.keys(d.people);
         sel.hidden = !(d.is_admin && ppl.length > 1);
         if (!sel.hidden && sel.options.length !== ppl.length + 1) {
-            sel.innerHTML = '<option value="">Everyone</option>'
+            sel.innerHTML = `<option value="">${lnEsc(T("Everyone"))}</option>`
                 + ppl.map((p) => `<option value="${lnEsc(p)}">${lnEsc(lnName(p))}</option>`).join("");
         }
         renderLearnedHistory();
     }
 
+    const LN_REASON = { left_home: "left home", feature_off: "feature off", manual: "manual",
+                        notification: "notification", paused: "paused", removed: "removed" };
+
     function lnDescribe(h) {
         const who = `<b>${lnEsc(lnName(h.person))}</b>`;
         if (h.type === "follow") {
-            const where = h.speaker ? ` (${lnEsc(lnSpeaker(h.speaker))})` : "";
-            return {
-                started: `${who}: follow me started${where}`,
-                joined: `${who}: music followed into ${lnEsc(h.zone || lnSpeaker(h.speaker))}`,
-                left: `${who}: music left ${lnEsc(lnSpeaker(h.speaker))}`,
-                stopped: `${who}: follow me stopped${h.reason ? ` (${lnEsc(String(h.reason).replace("_", " "))})` : ""}`,
-            }[h.event] || `${who}: follow me ${lnEsc(h.event)}`;
+            const sp = lnSpeaker(h.speaker);
+            const reason = h.reason ? T(LN_REASON[h.reason] || String(h.reason).replace(/_/g, " ")) : "";
+            const text = {
+                started: sp ? T(": follow me started ({})", sp) : T(": follow me started"),
+                joined: T(": music followed into {}", h.zone || sp),
+                left: T(": music left {}", sp),
+                stopped: reason ? T(": follow me stopped ({})", reason) : T(": follow me stopped"),
+            }[h.event] || T(": follow me {}", h.event);
+            return who + lnEsc(text);
         }
-        const what = h.id === "follow_me" ? `Follow me?${h.speaker ? ` (${lnEsc(lnSpeaker(h.speaker))})` : ""}` : lnEsc(h.title);
-        const ans = LN_ANSWER[h.answer] || lnEsc(h.answer);
-        const extra = h.answer === "expired" && h.reason ? ` (${h.reason === "timeout" ? "30 min passed" : "the moment passed"})` : "";
-        const via = h.via === "dashboard" ? " on the dashboard" : "";
-        return `${who} ${h.answer === "asked" ? "was asked" : "·"} <i>${what}</i>${h.answer === "asked" ? "" : ` — ${ans}${via}${extra}`}${h.unknown ? " <span class=\"bps-links-hint\">(someone unidentified was in the room)</span>" : ""}`;
+        const what = h.id === "follow_me"
+            ? (h.speaker ? T("Follow me? ({})", lnSpeaker(h.speaker)) : T("Follow me?"))
+            : h.title;
+        const unknown = h.unknown ? ` <span class="bps-links-hint">${lnEsc(T("(someone unidentified was in the room)"))}</span>` : "";
+        if (h.answer === "asked") return `${who} ${lnEsc(T("was asked"))} <i>${lnEsc(what)}</i>${unknown}`;
+        let ans = T(LN_ANSWER[h.answer] || String(h.answer));
+        if (h.via === "dashboard") ans += " " + T("on the dashboard");
+        if (h.answer === "expired" && h.reason) ans += " " + T(h.reason === "timeout" ? "(30 min passed)" : "(the moment passed)");
+        return `${who} · <i>${lnEsc(what)}</i> — ${lnEsc(ans)}${unknown}`;
     }
 
     function renderLearnedHistory() {
@@ -5802,8 +5829,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             let head = "";
             if (d !== day) {
                 day = d;
-                const label = d === today ? "Today"
-                    : new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
+                const label = d === today ? T("Today")
+                    : new Date(d + "T12:00:00").toLocaleDateString(
+                        (window.bpsI18n && window.bpsI18n.language) || undefined, { weekday: "long", day: "numeric", month: "short" });
                 head = `<div class="bps-ln-day">${lnEsc(label)}</div>`;
             }
             return `${head}<div class="bps-ln-item"><time>${lnEsc(String(h.t || "").slice(11, 16))}</time><span>${lnDescribe(h)}</span></div>`;
