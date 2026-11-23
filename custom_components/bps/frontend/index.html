@@ -335,6 +335,15 @@
                     <span class="bps-slider"></span>
                     <span><b>Follow me</b> <span class="bps-links-hint">Music follows a person from room to room. Always opt-in per session: the person starts it from a notification or the app.</span></span>
                 </label>
+                <details class="bps-set-advanced bps-set-indent">
+                    <summary>Follow me buttons for the dashboard</summary>
+                    <p class="bps-links-hint bps-set-help">Each person gets <code>sensor.bps_follow_&lt;person&gt;</code>: <code>available</code> while music plays in the zone they are in and nobody else owns it, <code>active</code> while music follows them, otherwise <code>off</code>. When music starts near someone, BPS also asks in a notification. The card below shows <b>Follow me</b> only to the person it is for, and only while it is available, and <b>Stop following</b> while it is active. The buttons call <code>bps.follow_me_start</code> / <code>bps.follow_me_stop</code>, which act for whoever presses them. Persons need a Home Assistant user and at least one tracker (see Persons below); the YAML is built from your Persons settings, so save those first.</p>
+                    <p class="bps-links-hint">Dashboard → Edit → Add card → Manual, paste, save.</p>
+                    <div class="bps-set-code">
+                        <button type="button" class="bps-btn" data-copy="setFollowYaml">Copy</button>
+                        <pre id="setFollowYaml"></pre>
+                    </div>
+                </details>
                 <label class="bps-switch bps-set-row">
                     <input type="checkbox" id="setSuggestions">
                     <span class="bps-slider"></span>
@@ -355,7 +364,7 @@
                     <summary>Dashboard card (YAML)</summary>
                     <p class="bps-links-hint">Dashboard → Edit → Add card → Manual, paste, save.</p>
                     <div class="bps-set-code">
-                        <button type="button" class="bps-btn" id="setCopyYaml">Copy</button>
+                        <button type="button" class="bps-btn" data-copy="setCardYaml">Copy</button>
                         <pre id="setCardYaml">type: conditional
 conditions:
   - condition: state

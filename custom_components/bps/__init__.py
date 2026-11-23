@@ -1518,7 +1518,10 @@ def person_for_user(hass, user_id):
 
 
 def _register_services(hass):
-    """bps.suggestion_answer: answer the open suggestion from a dashboard card.
+    """Dashboard services; the person is the HA user who presses the button.
+
+    bps.suggestion_answer answers the open suggestion; bps.follow_me_start /
+    bps.follow_me_stop start and stop follow me.
 
     The person is the HA user who pressed the button (or `person` from an
     automation). Fired on as a `bps_suggestion_answer` event, which the
@@ -1539,8 +1542,22 @@ def _register_services(hass):
                             {"person": person, "answer": answer, "key": call.data.get("key")},
                             context=call.context)
 
+    def _follow(action):
+        async def _handler(call):
+            person = str(call.data.get("person") or "").removeprefix("person.") or \
+                person_for_user(hass, call.context.user_id)
+            if not person:
+                _LOGGER.warning("bps.follow_me_%s: no person linked to the calling user", action)
+                return
+            hass.bus.async_fire("bps_follow_me", {"person": person, "action": action},
+                                context=call.context)
+        return _handler
+
     if not hass.services.has_service(DOMAIN, "suggestion_answer"):
         hass.services.async_register(DOMAIN, "suggestion_answer", _answer)
+    if not hass.services.has_service(DOMAIN, "follow_me_start"):
+        hass.services.async_register(DOMAIN, "follow_me_start", _follow("start"))
+        hass.services.async_register(DOMAIN, "follow_me_stop", _follow("stop"))
 
 
 async def async_setup(hass, config):
@@ -2266,6 +2283,7 @@ def _settings_payload(hass):
             "entity_id": st.entity_id,
             "name": name,
             "state": st.state,
+            "user_id": st.attributes.get("user_id"),
             "notify_suggested": (user_notify.get(st.attributes.get("user_id")) or [None])[0],
             "trackers_suggested": suggest_trackers(name, st.attributes.get("device_trackers") or [], keys),
         })

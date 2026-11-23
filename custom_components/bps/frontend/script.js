@@ -5249,6 +5249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById("setMoveM").value = t.move_m;
         document.getElementById("setStale").value = t.stale_s;
         renderPersons();
+        renderFollowYaml();
         setMarkDirty(false);
     }
 
@@ -5392,6 +5393,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             setData = await res.json();
             setDraft = JSON.parse(JSON.stringify(setData.settings));
             renderPersons();
+            renderFollowYaml();
             setMarkDirty(false);
             bpsToast("Settings saved.");
         } catch (e) {
@@ -5399,21 +5401,62 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    document.getElementById("setCopyYaml").addEventListener("click", async () => {
-        const text = document.getElementById("setCardYaml").textContent;
+    document.querySelectorAll("[data-copy]").forEach((btn) => btn.addEventListener("click", async () => {
+        const pre = document.getElementById(btn.getAttribute("data-copy"));
         try {
-            await navigator.clipboard.writeText(text);
+            await navigator.clipboard.writeText(pre.textContent);
             bpsToast("Card YAML copied.");
         } catch (e) {
             // Clipboard API can be blocked in the panel iframe: select instead.
             const r = document.createRange();
-            r.selectNodeContents(document.getElementById("setCardYaml"));
+            r.selectNodeContents(pre);
             const sel = window.getSelection();
             sel.removeAllRanges();
             sel.addRange(r);
             bpsToast("Press Ctrl/Cmd+C to copy.");
         }
-    });
+    }));
+
+    // Follow me card YAML, built from the saved persons: per person a
+    // "Follow me" button (state available) and a "Stop following" button
+    // (state active), each visible only to that person's HA user.
+    function renderFollowYaml() {
+        const pre = document.getElementById("setFollowYaml");
+        if (!pre || !setData) return;
+        const saved = setData.settings.persons || {};
+        const people = setData.choices.people.filter(p =>
+            p.user_id && saved[p.entity_id] && (saved[p.entity_id].trackers || []).length);
+        if (!people.length) {
+            pre.textContent = "# No person has both a Home Assistant user and a tracker yet.\n"
+                + "# Link trackers under Persons, save, and the card appears here.";
+            return;
+        }
+        const btn = (uid, sensor, st, name, icon, action) => [
+            "  - type: conditional",
+            "    conditions:",
+            "      - condition: user",
+            "        users:",
+            `          - ${uid}`,
+            "      - condition: state",
+            `        entity: ${sensor}`,
+            `        state: ${st}`,
+            "    card:",
+            "      type: button",
+            `      name: ${name}`,
+            `      icon: ${icon}`,
+            "      tap_action:",
+            "        action: perform-action",
+            `        perform_action: ${action}`,
+        ];
+        const lines = ["type: vertical-stack", "cards:"];
+        people.forEach(p => {
+            const sensor = "sensor.bps_follow_" + p.entity_id.split(".")[1];
+            lines.push(`  # ${p.name}`);
+            lines.push(...btn(p.user_id, sensor, "available", "Follow me", "mdi:music-note-plus", "bps.follow_me_start"));
+            lines.push(...btn(p.user_id, sensor, "active", "Stop following", "mdi:music-note-off", "bps.follow_me_stop"));
+        });
+        pre.textContent = lines.join("\n");
+    }
 
     function onSettingsTab(active) {
         clearInterval(setStatusTimer);
