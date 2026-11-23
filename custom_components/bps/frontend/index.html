@@ -12,6 +12,7 @@
             <button type="button" class="bps-tab" data-tab="calibration" role="tab">Receiver Calibration</button>
             <button type="button" class="bps-tab" data-tab="debugging" role="tab">Debugging</button>
             <button type="button" class="bps-tab" data-tab="settings" role="tab">Settings</button>
+            <button type="button" class="bps-tab" data-tab="learned" role="tab">Learned</button>
             <button type="button" id="themeToggle" class="bps-theme-toggle" title="Toggle light / dark theme" aria-label="Toggle theme">🌙</button>
         </nav>
 
@@ -314,13 +315,39 @@
         </section>
 
         <!-- ============================= SETTINGS ============================= -->
-        <!-- Shown instead of the tabs to users without configure access. -->
-        <section class="bps-tabpanel" data-tabpanel="restricted">
+        <!-- ============================== LEARNED ============================== -->
+        <section class="bps-tabpanel" data-tabpanel="learned">
+            <p id="lnRestricted" class="bps-links-hint" hidden>Floor plans, calibration and settings are managed by a Home Assistant administrator. Here you see what BPS has asked you and learned about you; nobody else's.</p>
             <div class="bps-card">
-                <h3>BPS is managed by an administrator</h3>
-                <p class="bps-links-hint">Floor plans, calibration and settings can only be changed by a Home Assistant administrator. An administrator can give everyone access under Settings → Access.</p>
+                <div class="bps-section-head">
+                    <h3>Learning</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">BPS learns routines from its local history (Settings → History). It needs 14 days with data, days when someone was home, before it suggests anything on its own. Days away don't count.</span>
+                    </span>
+                </div>
+                <div id="lnProgress"></div>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Suggestions</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Each suggestion BPS has made, per person: Asks (asks every time), Automatic (said yes 3 times in a row, now just happens, with an Undo button), or Never (said "Don't ask again"). Change it here at any time.</span>
+                    </span>
+                </div>
+                <div id="lnSuggestions"></div>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>History</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">The last 30 days of questions, answers, automatic runs and follow-me sessions.</span>
+                    </span>
+                    <select id="lnPerson" class="bps-ln-filter" hidden></select>
+                </div>
+                <div id="lnHistory"></div>
             </div>
         </section>
+
 
         <section class="bps-tabpanel" data-tabpanel="settings">
             <div class="bps-card">

@@ -3408,3 +3408,24 @@ input[type="checkbox"] { accent-color: hsl(var(--sidebar-primary)); }
 }
 .bps-set-code [data-copy] { position: absolute; top: 8px; right: 8px; }
 .bps-set-indent { margin: 0 0 10px; }
+
+/* Learned tab */
+.bps-tabpanel[data-tabpanel="learned"] .bps-card { margin-bottom: 16px; }
+.bps-ln-bar { height: 8px; border-radius: 999px; background: hsl(var(--muted)); overflow: hidden; margin: 8px 0 6px; max-width: 420px; }
+.bps-ln-bar > span { display: block; height: 100%; background: hsl(217 91% 55%); border-radius: 999px; }
+.bps-ln-sugg { border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.bps-ln-sugg-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.bps-ln-sugg-head .bps-links-hint { flex-basis: 100%; }
+.bps-ln-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; border-top: 1px solid hsl(var(--border)); font-size: 13px; margin-top: 6px; }
+.bps-ln-row .bps-ln-who { font-weight: 600; min-width: 70px; }
+.bps-ln-row .bps-ln-stats { color: hsl(var(--muted-foreground)); flex: 1 1 160px; }
+.bps-ln-mode { font-size: 11px; padding: 1px 8px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.bps-ln-mode.ask { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.bps-ln-mode.auto { background: hsl(217 91% 55%); color: #fff; }
+.bps-ln-mode.never { background: hsl(0 70% 50%); color: #fff; }
+.bps-ln-day { font-size: 12px; font-weight: 600; color: hsl(var(--muted-foreground)); margin: 12px 0 4px; text-transform: capitalize; }
+.bps-ln-item { display: flex; gap: 10px; padding: 4px 0; font-size: 13px; line-height: 1.4; }
+.bps-ln-item time { flex: 0 0 42px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.bps-ln-item > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.bps-ln-filter { margin-left: auto; font-size: 12px; padding: 3px 6px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--background)); color: hsl(var(--foreground)); }
+.bps-btn-sm { height: 24px; padding: 0 8px; font-size: 12px; font-weight: 500; }

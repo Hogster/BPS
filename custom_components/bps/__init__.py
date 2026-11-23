@@ -55,6 +55,7 @@ from .zone_links import build_zone_links, collect_candidates
 from .placement import analyze as analyze_placement
 from .usage import async_setup_usage
 from .engine import async_setup_engine, register_services
+from .learned import apply_pref_action, build_learned, scan_log
 from .access import can_configure, denied, user_access
 from .persons import (
     PersonTracker, merge_settings, validate_settings, guess_kind, guess_charging,
@@ -1541,6 +1542,7 @@ async def async_setup(hass, config):
             hass.http.register_view(BPSSettingsAPI())
             hass.http.register_view(BPSPlacementAPI())
             hass.http.register_view(BPSAccessAPI())
+            hass.http.register_view(BPSLearnedAPI())
             hass.data["bps_views_registered"] = True
 
         config_path = hass.config.path()
@@ -2221,6 +2223,68 @@ class BPSAccessAPI(HomeAssistantView):
             "user_id": user.id if user else None,
             "name": user.name if user else None,
         })
+
+
+class BPSLearnedAPI(HomeAssistantView):
+    """Learned tab: history, suggestion status per person, learning progress.
+
+    Every signed-in user may open it; non-admins only get (and may only
+    change) their own person's data.
+    """
+    url = "/api/bps/learned"
+    name = "api:bps:learned"
+    requires_auth = True
+
+    @staticmethod
+    def _viewer(hass, request):
+        user = request.get("hass_user")
+        home = hass.data.get(DOMAIN, {}).get("home")
+        me = home.person_for_user(user.id) if (home and user) else None
+        return bool(user and user.is_admin), me, home
+
+    async def get(self, request):
+        hass = request.app["hass"]
+        is_admin, me, home = self._viewer(hass, request)
+        sugg = hass.data.get(DOMAIN, {}).get("suggestions")
+        log = hass.data.get(DOMAIN, {}).get("eventlog")
+        if home is None or sugg is None or log is None:
+            return web.Response(status=503, text="BPS is still starting")
+        await log.async_flush()
+        try:
+            days, recs = await hass.async_add_executor_job(scan_log, log.dir)
+        except Exception as e:
+            _LOGGER.error("learned: reading the event log failed: %s", e)
+            days, recs = [], []
+        people = home.people()
+        payload = build_learned(days, recs, sugg.defs, sugg.prefs, people, me, is_admin)
+        payload["history_enabled"] = home.feature("history")
+        payload["features"] = {k: home.feature(k) for k in ("follow_me", "suggestions")}
+        return web.json_response(payload)
+
+    async def post(self, request):
+        hass = request.app["hass"]
+        is_admin, me, home = self._viewer(hass, request)
+        sugg = hass.data.get(DOMAIN, {}).get("suggestions")
+        if home is None or sugg is None:
+            return web.Response(status=503, text="BPS is still starting")
+        try:
+            body = await request.json()
+            person, key, action = str(body["person"]), str(body["key"]), str(body["action"])
+        except Exception:
+            return web.Response(status=400, text="person, key and action are required")
+        if not is_admin and person != me:
+            return denied()
+        if person not in home.people():
+            return web.Response(status=400, text="Unknown person")
+        try:
+            apply_pref_action(sugg.prefs, person, key, action)
+        except ValueError as e:
+            return web.Response(status=400, text=str(e))
+        sugg._save()
+        home_log = hass.data.get(DOMAIN, {}).get("eventlog")
+        if home_log:
+            home_log.log("suggestion", kind=key, person=person, answer=f"set_{action}", via="learned_tab")
+        return web.json_response({"ok": True})
 
 
 def _settings_payload(hass):

@@ -5685,7 +5685,148 @@ document.addEventListener('DOMContentLoaded', async () => {
             // readings are current (they drift as devices move / go out of range).
             if (name === "debugging" && !scannerLinkingLoading) loadScannerLinking();
             onSettingsTab(name === "settings");
+            if (name === "learned") loadLearned();
         });
+    });
+
+    // =================================================================
+    // Learned tab: learning progress, suggestions per person, history
+    // =================================================================
+    let lnData = null;
+    const lnEsc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g,
+        (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const lnName = (p) => ((lnData && lnData.people[p]) || {}).name
+        || String(p || "someone").split("_")[0].replace(/^./, (c) => c.toUpperCase());
+    const lnSpeaker = (eid) => String(eid || "").replace(/^media_player\./, "").replace(/_speaker$/, "").replace(/_/g, " ");
+    const LN_MODE = { ask: "Asks", auto: "Automatic", never: "Never" };
+    const LN_ANSWER = {
+        asked: "was asked", yes: "said yes", no: "said no", never: "said don't ask again",
+        undo: "undid it", auto: "it ran automatically", expired: "no answer",
+        set_forget: "forgot it (Learned tab)", set_allow: "allowed asking again (Learned tab)",
+        set_stop_auto: "stopped automatic (Learned tab)", set_never: "turned it off (Learned tab)",
+    };
+
+    async function loadLearned() {
+        try {
+            const res = await bpsFetch("/api/bps/learned");
+            if (!res.ok) throw new Error(res.status);
+            lnData = await res.json();
+        } catch (e) {
+            document.getElementById("lnHistory").innerHTML =
+                '<p class="bps-links-hint">Could not load what BPS has learned. Try again in a moment.</p>';
+            return;
+        }
+        renderLearned();
+    }
+
+    function renderLearned() {
+        const d = lnData;
+        const L = d.learning;
+        const pct = Math.min(100, Math.round(100 * L.days / L.target));
+        document.getElementById("lnProgress").innerHTML = !d.history_enabled
+            ? '<p class="bps-links-hint">History is turned off (Settings → Features), so BPS is not learning.</p>'
+            : `<div><b>${L.ready ? "Ready" : `Learning: ${L.days} of ${L.target} days`}</b></div>
+               <div class="bps-ln-bar"><span style="width:${pct}%"></span></div>
+               <p class="bps-links-hint">${L.ready
+                   ? `${L.days} days with data in the last 60 days. Enough to find routines.`
+                   : `${L.target - L.days} more day${L.target - L.days === 1 ? "" : "s"} with someone at home before BPS suggests routines on its own.`}
+               ${L.first_day ? ` Data since ${lnEsc(L.first_day)}.` : ""}</p>`;
+
+        const sBox = document.getElementById("lnSuggestions");
+        if (!d.suggestions.length) {
+            sBox.innerHTML = `<p class="bps-links-hint">No suggestions yet.${d.features.suggestions ? ""
+                : " Suggestions are turned off in Settings → Features."}</p>`;
+        } else {
+            sBox.innerHTML = d.suggestions.map((sg) => {
+                const rows = sg.people.map((r) => {
+                    const btns = [];
+                    if (r.mode === "auto") btns.push(["stop_auto", "Ask instead"]);
+                    if (r.mode === "never") btns.push(["allow", "Allow again"]);
+                    if (r.mode !== "never") btns.push(["never", "Never"]);
+                    btns.push(["forget", "Forget"]);
+                    return `<div class="bps-ln-row">
+                        <span class="bps-ln-who">${lnEsc(lnName(r.person))}${r.unknown ? " <span class=\"bps-links-hint\">(when someone unidentified is in the room)</span>" : ""}</span>
+                        <span class="bps-ln-mode ${lnEsc(r.mode)}">${LN_MODE[r.mode] || lnEsc(r.mode)}</span>
+                        <span class="bps-ln-stats">${r.yes} yes · ${r.no} no${r.mode === "ask" && r.streak ? ` · ${r.streak} of 3 yes in a row` : ""}${r.last_asked ? ` · last asked ${lnEsc(r.last_asked.replace("T", " ").slice(0, 16))}` : ""}</span>
+                        ${btns.map(([a, label]) => `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-action="${a}" data-ln-person="${lnEsc(r.person)}" data-ln-key="${lnEsc(r.key)}">${label}</button>`).join("")}
+                    </div>`;
+                }).join("");
+                return `<div class="bps-ln-sugg">
+                    <div class="bps-ln-sugg-head"><b>${lnEsc(sg.title)}</b>${sg.zone ? `<span class="bps-links-tag">${lnEsc(sg.zone)}</span>` : ""}
+                    ${sg.message ? `<span class="bps-links-hint">${lnEsc(sg.message)}</span>` : ""}</div>
+                    ${rows || '<p class="bps-links-hint">Nobody has been asked yet.</p>'}
+                </div>`;
+            }).join("");
+        }
+
+        const sel = document.getElementById("lnPerson");
+        const ppl = Object.keys(d.people);
+        sel.hidden = !(d.is_admin && ppl.length > 1);
+        if (!sel.hidden && sel.options.length !== ppl.length + 1) {
+            sel.innerHTML = '<option value="">Everyone</option>'
+                + ppl.map((p) => `<option value="${lnEsc(p)}">${lnEsc(lnName(p))}</option>`).join("");
+        }
+        renderLearnedHistory();
+    }
+
+    function lnDescribe(h) {
+        const who = `<b>${lnEsc(lnName(h.person))}</b>`;
+        if (h.type === "follow") {
+            const where = h.speaker ? ` (${lnEsc(lnSpeaker(h.speaker))})` : "";
+            return {
+                started: `${who}: follow me started${where}`,
+                joined: `${who}: music followed into ${lnEsc(h.zone || lnSpeaker(h.speaker))}`,
+                left: `${who}: music left ${lnEsc(lnSpeaker(h.speaker))}`,
+                stopped: `${who}: follow me stopped${h.reason ? ` (${lnEsc(String(h.reason).replace("_", " "))})` : ""}`,
+            }[h.event] || `${who}: follow me ${lnEsc(h.event)}`;
+        }
+        const what = h.id === "follow_me" ? `Follow me?${h.speaker ? ` (${lnEsc(lnSpeaker(h.speaker))})` : ""}` : lnEsc(h.title);
+        const ans = LN_ANSWER[h.answer] || lnEsc(h.answer);
+        const extra = h.answer === "expired" && h.reason ? ` (${h.reason === "timeout" ? "30 min passed" : "the moment passed"})` : "";
+        const via = h.via === "dashboard" ? " on the dashboard" : "";
+        return `${who} ${h.answer === "asked" ? "was asked" : "·"} <i>${what}</i>${h.answer === "asked" ? "" : ` — ${ans}${via}${extra}`}${h.unknown ? " <span class=\"bps-links-hint\">(someone unidentified was in the room)</span>" : ""}`;
+    }
+
+    function renderLearnedHistory() {
+        const box = document.getElementById("lnHistory");
+        const only = document.getElementById("lnPerson").value;
+        const items = lnData.history.filter((h) => !only || h.person === only);
+        if (!items.length) {
+            box.innerHTML = '<p class="bps-links-hint">Nothing yet. Questions, answers and follow-me sessions show up here.</p>';
+            return;
+        }
+        let day = null;
+        const today = new Date().toISOString().slice(0, 10);
+        box.innerHTML = items.map((h) => {
+            const d = String(h.t || "").slice(0, 10);
+            let head = "";
+            if (d !== day) {
+                day = d;
+                const label = d === today ? "Today"
+                    : new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
+                head = `<div class="bps-ln-day">${lnEsc(label)}</div>`;
+            }
+            return `${head}<div class="bps-ln-item"><time>${lnEsc(String(h.t || "").slice(11, 16))}</time><span>${lnDescribe(h)}</span></div>`;
+        }).join("");
+    }
+
+    document.getElementById("lnPerson").addEventListener("change", renderLearnedHistory);
+    document.getElementById("lnSuggestions").addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-ln-action]");
+        if (!btn) return;
+        btn.disabled = true;
+        try {
+            const res = await bpsFetch("/api/bps/learned", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ person: btn.dataset.lnPerson, key: btn.dataset.lnKey, action: btn.dataset.lnAction }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            bpsToast("Saved.");
+        } catch (err) {
+            bpsToast("Not saved: " + err.message);
+        }
+        loadLearned();
     });
 
     // Access: users without configure access get the restricted view only
@@ -5699,9 +5840,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
         if (bpsAccess.can_configure) return;
-        tabButtons.forEach((b) => { b.hidden = true; b.classList.remove("active"); });
-        tabPanels.forEach((pnl) => pnl.classList.toggle("active", pnl.dataset.tabpanel === "restricted"));
+        // Everyone else: only the Learned tab, with their own data.
+        tabButtons.forEach((b) => {
+            const mine = b.dataset.tab === "learned";
+            b.hidden = !mine;
+            b.classList.toggle("active", mine);
+        });
+        tabPanels.forEach((pnl) => pnl.classList.toggle("active", pnl.dataset.tabpanel === "learned"));
+        document.getElementById("lnRestricted").hidden = false;
         scheduleSidebarSync();
+        loadLearned();
     }
     applyAccess();
 
