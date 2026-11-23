@@ -2,6 +2,6 @@
 # only the genuinely numeric libs the positioning/geometry code runs against
 # are needed, plus the test runner.
 pytest>=9.2.0
-numpy>=2.0.0
+numpy>=2.5.5
 scipy>=1.18.1
 shapely>=2.0.2
