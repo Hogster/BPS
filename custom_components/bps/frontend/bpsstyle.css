@@ -2887,6 +2887,10 @@ select.bps-input { cursor: pointer; }
     background: #fff;
     transition: transform .15s;
 }
+.bps-slider { box-shadow: inset 0 0 0 1px hsl(var(--border)); }
+.bps-slider::after { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); }
+/* On: a clear accent in both themes (the theme's primary is near-white in dark). */
+.bps-switch input:checked + .bps-slider { background: hsl(217 91% 55%); box-shadow: none; }
 .bps-switch input:checked + .bps-slider::after { transform: translateX(14px); }
 .bps-switch input:focus-visible + .bps-slider {
     outline: 2px solid hsl(var(--ring));
@@ -3348,8 +3352,10 @@ input[type="checkbox"] { accent-color: hsl(var(--sidebar-primary)); }
 
 /* Settings tab */
 .bps-tabpanel[data-tabpanel="settings"] .bps-card { margin-bottom: 16px; }
-.bps-set-row { display: flex; align-items: flex-start; gap: 10px; margin: 8px 0 12px; }
-.bps-set-row > span:last-child { display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+/* Settings rows wrap their description (the switch itself is nowrap). */
+.bps-set-row { display: flex; align-items: flex-start; gap: 10px; margin: 8px 0 12px; white-space: normal; }
+.bps-set-row > span:last-child { display: flex; flex-direction: column; gap: 2px; font-size: 14px; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.bps-set-row .bps-slider { margin-top: 2px; }
 .bps-set-input { max-width: 360px; }
 .bps-set-person { border: 1px solid hsl(var(--border)); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
 .bps-set-person-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
