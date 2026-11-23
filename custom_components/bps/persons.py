@@ -38,7 +38,7 @@ CHARGING_STATES = ("charging", "full", "on", "true")
 TICK_S = 5
 
 DEFAULT_SETTINGS = {
-    "features": {"follow_me": False, "suggestions": False},
+    "features": {"follow_me": False, "suggestions": False, "history": True},
     "notify": {"tap_path": "/lovelace/0"},
     "tracking": {"dwell_s": 15, "still_min": 10, "moved_recent_s": 120,
                  "move_m": 1.5, "stale_s": 120},
@@ -74,7 +74,7 @@ def validate_settings(data) -> dict:
     out = merge_settings({})
     feats = data.get("features") or {}
     for k in out["features"]:
-        out["features"][k] = bool(feats.get(k, False))
+        out["features"][k] = bool(feats.get(k, DEFAULT_SETTINGS["features"][k]))
     tap = str((data.get("notify") or {}).get("tap_path") or "").strip()
     if tap and not re.fullmatch(r"/[A-Za-z0-9_\-/]*", tap):
         raise ValueError("tap_path must be a path like /lovelace/0")

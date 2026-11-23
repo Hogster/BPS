@@ -61,7 +61,7 @@ def test_validate_settings_cleans_and_rejects():
         "tracking": {"dwell_s": "20"},
         "persons": {"person.anna": {"trackers": [{"key": "annas_watch", "kind": "bogus"}], "notify": "mobile_app_x"}},
     })
-    assert out["features"] == {"follow_me": True, "suggestions": False}
+    assert out["features"] == {"follow_me": True, "suggestions": False, "history": True}
     assert out["tracking"]["dwell_s"] == 20 and out["tracking"]["still_min"] == 10
     assert out["persons"]["person.anna"]["trackers"][0] == {"key": "annas_watch", "kind": "tag", "charging": None}
     for bad in ({"notify": {"tap_path": "https://evil"}},
@@ -75,7 +75,7 @@ def test_validate_settings_cleans_and_rejects():
 
 def test_merge_settings_fills_defaults():
     m = merge_settings({"features": {"follow_me": True}})
-    assert m["features"] == {"follow_me": True, "suggestions": False}
+    assert m["features"] == {"follow_me": True, "suggestions": False, "history": True}
     assert m["notify"]["tap_path"] == "/lovelace/0" and m["persons"] == {}
     assert merge_settings(None) == DEFAULT_SETTINGS
 

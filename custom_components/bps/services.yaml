@@ -48,3 +48,91 @@ follow_me_stop:
       selector:
         entity:
           domain: person
+
+suggest:
+  name: Suggest
+  description: Ask the people BPS sees in a zone whether to run an action (notification with Yes / No / Don't ask again, plus sensor.bps_suggestion for a dashboard card). BPS learns per person; 3 yes in a row and it runs automatically next time, with an Undo button.
+  fields:
+    id:
+      name: ID
+      description: Stable key for this suggestion; answers are learned per ID.
+      required: true
+      example: tv_cozy
+      selector:
+        text:
+    zone:
+      name: Zone
+      description: BPS zone whose people are asked.
+      required: true
+      example: Livingroom
+      selector:
+        text:
+    title:
+      name: Title
+      required: true
+      example: "📺 Cozy?"
+      selector:
+        text:
+    message:
+      name: Question
+      required: true
+      example: Dim the lights for the TV?
+      selector:
+        text:
+    action:
+      name: Action
+      description: Script, scene or automation to run on yes.
+      required: true
+      example: script.tv_cozy
+      selector:
+        entity:
+          domain: [script, scene, automation]
+    done_message:
+      name: Done message
+      description: Shown when it runs automatically.
+      required: false
+      selector:
+        text:
+    unknown_message:
+      name: Question when only unidentified people are in the zone
+      description: When room sensors see someone without a tracker (kids, guests), ask the people at home with this text instead. Never runs automatically.
+      required: false
+      selector:
+        text:
+    undo_entities:
+      name: Undo entities
+      description: Snapshot these before running, so Undo can restore them.
+      required: false
+      selector:
+        entity:
+          multiple: true
+    once_per:
+      name: At most once per
+      description: evening (resets at noon), day, hour or none.
+      required: false
+      default: evening
+      selector:
+        select:
+          options: [evening, day, hour, none]
+
+suggestion_clear:
+  name: Clear suggestion
+  description: The moment has passed (e.g. the TV went off); remove the open question.
+  fields:
+    id:
+      name: ID
+      required: true
+      example: tv_cozy
+      selector:
+        text:
+
+suggestion_reask:
+  name: Ask again
+  description: Forget that a suggestion was already asked in this period (for testing).
+  fields:
+    id:
+      name: ID
+      description: Leave empty for all suggestions.
+      required: false
+      selector:
+        text:

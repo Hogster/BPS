@@ -54,6 +54,7 @@ from .zone_adjust import adjust_zones, adjust_subzones
 from .zone_links import build_zone_links, collect_candidates
 from .placement import analyze as analyze_placement
 from .usage import async_setup_usage
+from .engine import async_setup_engine, register_services
 from .access import can_configure, denied, user_access
 from .persons import (
     PersonTracker, merge_settings, validate_settings, guess_kind, guess_charging,
@@ -1504,60 +1505,8 @@ def find_sub_zone_for_point(data, entity, floor_name, point):
     return "unknown", None
 
 
-SUGGESTION_ANSWERS = ("yes", "no", "never", "undo")
-
-
-def person_for_user(hass, user_id):
-    """object_id of the person linked to this HA user, or None."""
-    if not user_id:
-        return None
-    for st in hass.states.async_all("person"):
-        if st.attributes.get("user_id") == user_id:
-            return st.entity_id.split(".", 1)[1]
-    return None
-
-
 def _register_services(hass):
-    """Dashboard services; the person is the HA user who presses the button.
-
-    bps.suggestion_answer answers the open suggestion; bps.follow_me_start /
-    bps.follow_me_stop start and stop follow me.
-
-    The person is the HA user who pressed the button (or `person` from an
-    automation). Fired on as a `bps_suggestion_answer` event, which the
-    suggestion engine listens to, so the dashboard YAML stays the same when
-    the engine moves into BPS.
-    """
-    async def _answer(call):
-        answer = str(call.data.get("answer") or "").lower()
-        if answer not in SUGGESTION_ANSWERS:
-            _LOGGER.warning("bps.suggestion_answer: unknown answer %r", answer)
-            return
-        person = str(call.data.get("person") or "").removeprefix("person.") or \
-            person_for_user(hass, call.context.user_id)
-        if not person:
-            _LOGGER.warning("bps.suggestion_answer: no person linked to the calling user")
-            return
-        hass.bus.async_fire("bps_suggestion_answer",
-                            {"person": person, "answer": answer, "key": call.data.get("key")},
-                            context=call.context)
-
-    def _follow(action):
-        async def _handler(call):
-            person = str(call.data.get("person") or "").removeprefix("person.") or \
-                person_for_user(hass, call.context.user_id)
-            if not person:
-                _LOGGER.warning("bps.follow_me_%s: no person linked to the calling user", action)
-                return
-            hass.bus.async_fire("bps_follow_me", {"person": person, "action": action},
-                                context=call.context)
-        return _handler
-
-    if not hass.services.has_service(DOMAIN, "suggestion_answer"):
-        hass.services.async_register(DOMAIN, "suggestion_answer", _answer)
-    if not hass.services.has_service(DOMAIN, "follow_me_start"):
-        hass.services.async_register(DOMAIN, "follow_me_start", _follow("start"))
-        hass.services.async_register(DOMAIN, "follow_me_stop", _follow("stop"))
+    register_services(hass, DOMAIN)
 
 
 async def async_setup(hass, config):
@@ -1671,6 +1620,15 @@ async def async_setup(hass, config):
         except Exception as e:
             _LOGGER.warning("Zone usage statistics disabled: %s", e)
 
+        # Home engine: event log, zone counts, follow me, suggestions
+        old_engine_stop = hass.data.get(DOMAIN, {}).pop("engine_stop", None)
+        if old_engine_stop:
+            await old_engine_stop()
+        try:
+            hass.data.setdefault(DOMAIN, {})["engine_stop"] = await async_setup_engine(hass, DOMAIN)
+        except Exception as e:
+            _LOGGER.exception("BPS home engine (follow me, suggestions) failed to start: %s", e)
+
         jinja_code = """
         {{
             states.sensor
@@ -1698,6 +1656,9 @@ async def async_setup(hass, config):
             usage_stop = hass.data.get(DOMAIN, {}).pop("usage_stop", None)
             if usage_stop:
                 await usage_stop()
+            engine_stop = hass.data.get(DOMAIN, {}).pop("engine_stop", None)
+            if engine_stop:
+                await engine_stop()
             await async_shutdown_calibration(hass)
 
         hass.bus.async_listen_once("homeassistant_stop", handle_homeassistant_stop)
@@ -1766,6 +1727,9 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     usage_stop = hass.data.get(DOMAIN, {}).pop("usage_stop", None)
     if usage_stop:
         await usage_stop()
+    engine_stop = hass.data.get(DOMAIN, {}).pop("engine_stop", None)
+    if engine_stop:
+        await engine_stop()
 
     await async_shutdown_calibration(hass)
 

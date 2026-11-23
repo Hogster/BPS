@@ -5239,6 +5239,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setDraft = JSON.parse(JSON.stringify(setData.settings));
         document.getElementById("setFollowMe").checked = !!setDraft.features.follow_me;
         document.getElementById("setSuggestions").checked = !!setDraft.features.suggestions;
+        document.getElementById("setHistory").checked = setDraft.features.history !== false;
         document.getElementById("setAllUsers").checked = !!(setDraft.access || {}).all_users;
         document.getElementById("setAllUsers").disabled = !bpsAccess.is_admin;
         document.getElementById("setTapPath").value = setDraft.notify.tap_path || "";
@@ -5358,13 +5359,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderPersons();
         setMarkDirty();
     });
-    ["setFollowMe", "setSuggestions", "setAllUsers", "setTapPath", "setDwell", "setStill", "setMoved", "setMoveM", "setStale"]
+    ["setFollowMe", "setSuggestions", "setHistory", "setAllUsers", "setTapPath", "setDwell", "setStill", "setMoved", "setMoveM", "setStale"]
         .forEach(id => document.getElementById(id).addEventListener("input", () => setMarkDirty()));
 
     document.getElementById("setSave").addEventListener("click", async () => {
         if (!setDraft) return;
         setDraft.features.follow_me = document.getElementById("setFollowMe").checked;
         setDraft.features.suggestions = document.getElementById("setSuggestions").checked;
+        setDraft.features.history = document.getElementById("setHistory").checked;
         setDraft.access = { all_users: document.getElementById("setAllUsers").checked };
         setDraft.notify.tap_path = document.getElementById("setTapPath").value.trim();
         setDraft.tracking = {
