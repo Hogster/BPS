@@ -3,5 +3,5 @@
 # are needed, plus the test runner.
 pytest>=9.2.0
 numpy>=2.0.0
-scipy>=1.16.0
+scipy>=1.18.1
 shapely>=2.0.2
