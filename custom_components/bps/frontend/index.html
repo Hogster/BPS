@@ -314,6 +314,14 @@
         </section>
 
         <!-- ============================= SETTINGS ============================= -->
+        <!-- Shown instead of the tabs to users without configure access. -->
+        <section class="bps-tabpanel" data-tabpanel="restricted">
+            <div class="bps-card">
+                <h3>BPS is managed by an administrator</h3>
+                <p class="bps-links-hint">Floor plans, calibration and settings can only be changed by a Home Assistant administrator. An administrator can give everyone access under Settings → Access.</p>
+            </div>
+        </section>
+
         <section class="bps-tabpanel" data-tabpanel="settings">
             <div class="bps-card">
                 <div class="bps-section-head">
@@ -361,6 +369,19 @@
                         <label>Not seen after (s)<input type="number" id="setStale" min="10" max="3600" step="10"></label>
                     </div>
                 </details>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Access</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Everyone in Home Assistant can open BPS. By default only administrators can change it; other users only see what is meant for them. Only an administrator can change this setting.</span>
+                    </span>
+                </div>
+                <label class="bps-switch bps-set-row">
+                    <input type="checkbox" id="setAllUsers">
+                    <span class="bps-slider"></span>
+                    <span><b>Full access for all users</b> <span class="bps-links-hint">When on, every Home Assistant user, not only administrators, can change floor plans, zones, calibration and these settings. Learned patterns stay private: each user only ever sees their own.</span></span>
+                </label>
             </div>
             <div class="bps-set-actions">
                 <span id="setDirty" class="bps-links-hint"></span>

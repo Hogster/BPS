@@ -50,6 +50,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const headers = Object.assign({}, opts.headers || {});
         if (bpsAuthToken) headers["Authorization"] = "Bearer " + bpsAuthToken;
         const res = await fetch(url, Object.assign({}, opts, { headers }));
+        // A 403 marked X-BPS-Access is an access decision, not a bad token:
+        // keep the token and don't back off the other calls.
+        const accessDenied = res.status === 403 && res.headers.get("X-BPS-Access") === "denied";
+        if (accessDenied) return res;
         if (res.status === 401 || res.status === 403) {
             _authFails += 1;
             _authDeadToken = bpsAuthToken;
@@ -70,6 +74,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         return res;
     }
+    // What this user may do (GET /api/bps/access); assume full until known.
+    let bpsAccess = { is_admin: true, can_configure: true };
+
     const upload = document.getElementById('upload');
     const mapSelector = document.getElementById('mapSelector');
     const entSelector = document.getElementById('entSelector');
@@ -5232,6 +5239,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         setDraft = JSON.parse(JSON.stringify(setData.settings));
         document.getElementById("setFollowMe").checked = !!setDraft.features.follow_me;
         document.getElementById("setSuggestions").checked = !!setDraft.features.suggestions;
+        document.getElementById("setAllUsers").checked = !!(setDraft.access || {}).all_users;
+        document.getElementById("setAllUsers").disabled = !bpsAccess.is_admin;
         document.getElementById("setTapPath").value = setDraft.notify.tap_path || "";
         const t = setDraft.tracking;
         document.getElementById("setDwell").value = t.dwell_s;
@@ -5348,13 +5357,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderPersons();
         setMarkDirty();
     });
-    ["setFollowMe", "setSuggestions", "setTapPath", "setDwell", "setStill", "setMoved", "setMoveM", "setStale"]
+    ["setFollowMe", "setSuggestions", "setAllUsers", "setTapPath", "setDwell", "setStill", "setMoved", "setMoveM", "setStale"]
         .forEach(id => document.getElementById(id).addEventListener("input", () => setMarkDirty()));
 
     document.getElementById("setSave").addEventListener("click", async () => {
         if (!setDraft) return;
         setDraft.features.follow_me = document.getElementById("setFollowMe").checked;
         setDraft.features.suggestions = document.getElementById("setSuggestions").checked;
+        setDraft.access = { all_users: document.getElementById("setAllUsers").checked };
         setDraft.notify.tap_path = document.getElementById("setTapPath").value.trim();
         setDraft.tracking = {
             dwell_s: Number(document.getElementById("setDwell").value),
@@ -5375,7 +5385,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 body: JSON.stringify(setDraft),
             });
             if (!res.ok) {
-                bpsToast(res.status === 403 ? "Only an administrator can change BPS settings."
+                bpsToast(res.status === 403 ? "You don't have access to change BPS settings."
                     : "Not saved: " + (await res.text()));
                 return;
             }
@@ -5616,6 +5626,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             onSettingsTab(name === "settings");
         });
     });
+
+    // Access: users without configure access get the restricted view only
+    // (the server enforces it; this just avoids a panel full of 403s).
+    async function applyAccess() {
+        try {
+            const res = await bpsFetch("/api/bps/access");
+            if (!res.ok) return;
+            bpsAccess = await res.json();
+        } catch (e) {
+            return;
+        }
+        if (bpsAccess.can_configure) return;
+        tabButtons.forEach((b) => { b.hidden = true; b.classList.remove("active"); });
+        tabPanels.forEach((pnl) => pnl.classList.toggle("active", pnl.dataset.tabpanel === "restricted"));
+        scheduleSidebarSync();
+    }
+    applyAccess();
 
     // Cap the Zones & Receivers sidebar at the bottom of the viewport so a long
     // receiver list scrolls inside it instead of running off-screen. In the

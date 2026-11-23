@@ -1015,6 +1015,9 @@ class BPSCalibrationAPI(HomeAssistantView):
 
     async def post(self, request):
         hass = request.app["hass"]
+        from .access import can_configure, denied
+        if not can_configure(hass, request):
+            return denied()
         cal = get_calibration_state(hass)
         try:
             data = await request.json()

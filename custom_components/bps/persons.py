@@ -43,6 +43,10 @@ DEFAULT_SETTINGS = {
     "tracking": {"dwell_s": 15, "still_min": 10, "moved_recent_s": 120,
                  "move_m": 1.5, "stale_s": 120},
     "persons": {},
+    # Non-admin HA users: by default they may only view (the map card, and
+    # later their own learned patterns). all_users=True gives every HA user
+    # full configuration access, like BPS before 0.3.0.
+    "access": {"all_users": False},
 }
 _LIMITS = {"dwell_s": (0, 600), "still_min": (1, 240), "moved_recent_s": (10, 3600),
            "move_m": (0.3, 10), "stale_s": (10, 3600)}
@@ -55,7 +59,7 @@ def merge_settings(stored) -> dict:
     out = copy.deepcopy(DEFAULT_SETTINGS)
     if not isinstance(stored, dict):
         return out
-    for section in ("features", "notify", "tracking"):
+    for section in ("features", "notify", "tracking", "access"):
         if isinstance(stored.get(section), dict):
             out[section].update(stored[section])
     if isinstance(stored.get("persons"), dict):
@@ -105,6 +109,7 @@ def validate_settings(data) -> dict:
             raise ValueError(f"bad notify service {notify!r}")
         persons[pid] = {"trackers": trackers, "notify": notify}
     out["persons"] = persons
+    out["access"]["all_users"] = bool((data.get("access") or {}).get("all_users", False))
     return out
 
 

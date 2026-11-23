@@ -54,6 +54,7 @@ from .zone_adjust import adjust_zones, adjust_subzones
 from .zone_links import build_zone_links, collect_candidates
 from .placement import analyze as analyze_placement
 from .usage import async_setup_usage
+from .access import can_configure, denied, user_access
 from .persons import (
     PersonTracker, merge_settings, validate_settings, guess_kind, guess_charging,
     suggest_trackers, KINDS,
@@ -1532,6 +1533,7 @@ async def async_setup(hass, config):
             hass.http.register_view(BPSZoneLinksAPI())
             hass.http.register_view(BPSSettingsAPI())
             hass.http.register_view(BPSPlacementAPI())
+            hass.http.register_view(BPSAccessAPI())
             hass.data["bps_views_registered"] = True
 
         config_path = hass.config.path()
@@ -1796,6 +1798,8 @@ class BPSSaveAPIText(HomeAssistantView):
 
     async def post(self, request):
         """Handle saving coordinates to a text file."""
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         data = await request.post()
 
@@ -1903,6 +1907,8 @@ class BPSAdjustZonesAPI(HomeAssistantView):
     requires_auth = True
 
     async def post(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         try:
             body = await request.json()
@@ -2005,6 +2011,8 @@ class BPSScannerLinkingAPI(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         # No placements to compare against is fine; still report the sensors.
         layout = get_bps_data(hass)
@@ -2033,6 +2041,8 @@ class BPSZoneLinksAPI(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         try:
             areas, candidates = collect_candidates(hass)
@@ -2109,6 +2119,8 @@ class BPSPlacementAPI(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         try:
             layout = get_bps_data(hass)
@@ -2138,7 +2150,9 @@ class BPSSettingsAPI(HomeAssistantView):
 
     GET returns the settings, the choices the panel needs (people, BPS
     trackers, charging sensors, notify services) with suggestions, and the
-    live tracker choice per person. POST (admin only) replaces the settings.
+    live tracker choice per person. POST replaces the settings. Both need
+    configure access (admin, or any user when access.all_users is on); only
+    an admin may change access itself.
     """
     url = "/api/bps/settings"
     name = "api:bps:settings"
@@ -2146,6 +2160,8 @@ class BPSSettingsAPI(HomeAssistantView):
 
     async def get(self, request):
         hass = request.app["hass"]
+        if not can_configure(hass, request):
+            return denied()
         try:
             return web.json_response(_settings_payload(hass))
         except Exception as e:
@@ -2154,15 +2170,35 @@ class BPSSettingsAPI(HomeAssistantView):
 
     async def post(self, request):
         hass = request.app["hass"]
-        user = request.get("hass_user")
-        if user is None or not user.is_admin:
-            return web.Response(status=403, text="Admin required")
+        is_admin, allowed = user_access(hass, request)
+        if not allowed:
+            return denied()
         try:
             data = validate_settings(await request.json())
         except (ValueError, TypeError) as e:
             return web.Response(status=400, text=str(e))
+        if not is_admin:
+            # Only an administrator decides who may configure BPS.
+            data["access"] = merge_settings(get_settings_raw(hass))["access"]
         await save_settings(hass, data)
         return web.json_response(_settings_payload(hass))
+
+
+class BPSAccessAPI(HomeAssistantView):
+    """What the current user may do in the panel (drives the restricted view)."""
+    url = "/api/bps/access"
+    name = "api:bps:access"
+    requires_auth = True
+
+    async def get(self, request):
+        is_admin, allowed = user_access(request.app["hass"], request)
+        user = request.get("hass_user")
+        return web.json_response({
+            "is_admin": is_admin,
+            "can_configure": allowed,
+            "user_id": user.id if user else None,
+            "name": user.name if user else None,
+        })
 
 
 def _settings_payload(hass):
@@ -2276,6 +2312,8 @@ class BPSUploadTrackerIconAPI(HomeAssistantView):
     requires_auth = True
 
     async def post(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         data = await request.post()
         icon_file = data.get("icon")
