@@ -497,6 +497,7 @@
         "colour": "färg",
         "At least one person must be ticked. Use Remove to delete it.": "Minst en person måste vara ikryssad. Använd Ta bort för att radera tillägget.",
         "Lights": "Lampor",
+        "Link HA area, media players, presence sensors and lights": "Länka HA-område, mediaspelare, närvarosensorer och lampor",
         "text changed here": "text ändrad här",
         "Edit text": "Ändra text",
         "Save": "Spara",

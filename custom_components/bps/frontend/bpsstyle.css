@@ -3447,3 +3447,4 @@ input[type="checkbox"] { accent-color: hsl(var(--sidebar-primary)); }
 .bps-ln-tf { display: grid; gap: 2px; font-size: 13px; }
 .bps-ln-tf .bps-modal-input { width: 100%; box-sizing: border-box; }
 .bps-ln-tf-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.bps-ln-textform[hidden], .bps-ln-xform[hidden] { display: none; }

@@ -4231,7 +4231,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 + `<input type="color" class="bps-zone-swatch${uncolored ? ' bps-swatch-off' : ''}" data-type="zonecolor" data-id="${escHtml(zoneDomId)}" value="${colorToHex(zoneColor)}" title="Pick zone colour">`
                 + `<button class="bps-icon-btn" title="${uncolored ? 'Add colour' : 'Remove colour'}" data-type="zonetogglecolor" data-id="${escHtml(zoneDomId)}">${uncolored ? colorOnSvg : colorOffSvg}</button>`
                 + `<button class="bps-icon-btn bps-nogo-btn${noGo ? ' bps-nogo-on' : ''}" title="${noGo ? 'Unmark no-go zone' : 'Mark as no-go (dead space — nothing can be here)'}" data-type="zonetogglenogo" data-id="${escHtml(zoneDomId)}">${noGoSvg}</button>`
-                + `<button class="bps-icon-btn${linkCount ? ' bps-links-on' : ''}" title="Link HA area, media players and presence sensors" data-type="zonelinks" data-id="${escHtml(zoneDomId)}">${linkSvg}</button>`
+                + `<button class="bps-icon-btn${linkCount ? ' bps-links-on' : ''}" title="Link HA area, media players, presence sensors and lights" data-type="zonelinks" data-id="${escHtml(zoneDomId)}">${linkSvg}</button>`
                 + `<button class="bps-icon-btn" title="Edit zone" data-type="editzone" data-id="${escHtml(zoneDomId)}">${pencilSvg}</button>`
                 + `<button class="bps-icon-btn" title="Remove zone" data-type="removezone" data-id="${escHtml(zoneDomId)}">${trashSvg}</button>`
                 + '</span>';
