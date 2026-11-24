@@ -3443,3 +3443,7 @@ input[type="checkbox"] { accent-color: hsl(var(--sidebar-primary)); }
 .bps-ln-warn { color: hsl(0 70% 50%); border-color: hsl(0 70% 50%); }
 .bps-ln-xform { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 8px; }
 .bps-ln-xform .bps-modal-input { width: auto; max-width: 100%; }
+.bps-ln-textform { display: grid; gap: 8px; margin: 8px 0; padding: 8px 10px; border: 1px solid hsl(var(--border)); border-radius: 8px; }
+.bps-ln-tf { display: grid; gap: 2px; font-size: 13px; }
+.bps-ln-tf .bps-modal-input { width: 100%; box-sizing: border-box; }
+.bps-ln-tf-actions { display: flex; flex-wrap: wrap; gap: 6px; }

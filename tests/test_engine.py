@@ -415,3 +415,15 @@ def test_definition_is_saved_even_when_nobody_is_asked():
     s._save = lambda: saved.append(dict(s.defs))
     assert run(s.suggest(dict(DEF))) == "nobody"
     assert saved and "tv" in saved[-1]
+
+
+def test_texts_edited_in_the_panel_win_over_the_automation():
+    hass, s = _sugg()
+    put(hass, "anna", "Livingroom")
+    s.set_texts("tv", {"title": "Movie night?", "message": ""})
+    run(s.suggest(dict(DEF)))
+    note = [c for c in hass.services.calls if c[0] == "notify"][0][2]
+    assert note["title"] == "Movie night?" and note["message"].startswith("Cozy?")
+    assert s.defs["tv"]["title"] == "TV"          # the automation's own text is kept
+    s.set_texts("tv", {"title": ""})
+    assert "tv" not in s.texts

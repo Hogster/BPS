@@ -5772,7 +5772,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }).join("");
                 return `<div class="bps-ln-sugg" data-ln-sid="${lnEsc(sg.id)}">
                     <div class="bps-ln-sugg-head"><b>${lnEsc(sg.title)}</b>${sg.zone ? `<span class="bps-links-tag">${lnEsc(sg.zone)}</span>` : ""}
+                    ${(sg.texts_edited || []).length ? `<span class="bps-links-tag">${lnEsc(T("text changed here"))}</span>` : ""}
+                    ${sg.texts && lnData.can_configure ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm bps-ln-edit-btn" data-ln-texts="1">${lnEsc(T("Edit text"))}</button>` : ""}
                     ${sg.message ? `<span class="bps-links-hint">${lnEsc(sg.message)}</span>` : ""}</div>
+                    <div class="bps-ln-textform" hidden></div>
                     ${lnWhatHtml(sg)}
                     ${rows || `<p class="bps-links-hint">${lnEsc(T("Nobody has been asked yet."))}</p>`}
                 </div>`;
@@ -5900,6 +5903,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
+    const LN_TEXT_FIELDS = [
+        ["title", "Title"], ["message", "Question"],
+        ["done_message", "Text when it ran automatically"],
+        ["unknown_message", "Question when only someone unidentified is in the room"],
+    ];
+    function lnTextForm(box, sg) {
+        const auto = sg.texts_from_automation || {};
+        box.innerHTML = LN_TEXT_FIELDS.map(([k, label]) => `<label class="bps-ln-tf">
+                <span>${lnEsc(T(label))}</span>
+                <input type="text" class="bps-modal-input" data-tf="${k}" value="${lnEsc(sg.texts[k] || "")}" maxlength="500">
+                ${auto[k] && auto[k] !== sg.texts[k] ? `<span class="bps-links-hint">${lnEsc(T("From the automation: {}", auto[k]))}</span>` : ""}
+            </label>`).join("")
+            + `<p class="bps-links-hint">${lnEsc(T("Text changed here wins over the automation's. Leave a field empty to use the automation's text."))}</p>
+            <div class="bps-ln-tf-actions">
+                <button type="button" class="bps-btn bps-btn-primary bps-btn-sm" data-tf-act="save">${lnEsc(T("Save"))}</button>
+                ${(sg.texts_edited || []).length ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-tf-act="reset">${lnEsc(T("Use the automation's text"))}</button>` : ""}
+                <button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-tf-act="cancel">${lnEsc(T("Cancel"))}</button>
+            </div>`;
+        box.hidden = false;
+    }
+
     async function lnEdit(body) {
         try {
             const res = await bpsFetch("/api/bps/learned", {
@@ -5943,7 +5967,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         const card = t && t.closest("[data-ln-sid]");
         if (!card) return;
         const id = card.dataset.lnSid;
-        if (t.dataset.lnReset) lnEdit({ op: "override", id, entity: t.dataset.lnReset, value: null });
+        if (t.dataset.lnTexts) lnTextForm(card.querySelector(".bps-ln-textform"), lnSugg(t));
+        else if (t.dataset.tfAct === "cancel") card.querySelector(".bps-ln-textform").hidden = true;
+        else if (t.dataset.tfAct === "save" || t.dataset.tfAct === "reset") {
+            const texts = {};
+            const sg = lnSugg(t);
+            card.querySelectorAll("[data-tf]").forEach((i) => {
+                const v = t.dataset.tfAct === "reset" ? "" : i.value.trim();
+                // a field equal to the automation's own text is not an edit
+                texts[i.dataset.tf] = v === ((sg.texts_from_automation || {})[i.dataset.tf] || "") ? "" : v;
+            });
+            lnEdit({ op: "texts", id, texts });
+        } else if (t.dataset.lnReset) lnEdit({ op: "override", id, entity: t.dataset.lnReset, value: null });
         else if (t.dataset.lnXdel) lnEdit({ op: "extra_delete", id, extra_id: t.dataset.lnXdel });
         else if (t.dataset.lnXadd) lnCollect = lnExtraForm(card.querySelector(".bps-ln-xform"));
         else if (t.dataset.xf === "cancel") card.querySelector(".bps-ln-xform").hidden = true;

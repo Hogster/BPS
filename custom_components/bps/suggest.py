@@ -49,6 +49,7 @@ EXPIRE_MIN = 30
 ANSWERS = ("yes", "no", "never", "undo")
 ONCE_PER = ("evening", "day", "hour", "none")
 STORE_KEY = "bps_suggestions"
+TEXT_FIELDS = ("title", "message", "done_message", "unknown_message")
 TICK_S = 60
 
 
@@ -116,6 +117,7 @@ class Suggestions:
         self.open = {}       # id -> open question for the dashboard
         self.overrides = {}  # id -> light -> spec | {"skip": True} (administrator)
         self.extras = {}     # id -> [extra] (people's own additions)
+        self.texts = {}      # id -> {title, message, ...} edited in the panel (win over the automation)
         self._store = None
         self._unsubs = []
         self._task = None
@@ -133,12 +135,14 @@ class Suggestions:
         self.defs = {k: v for k, v in (data.get("defs") or {}).items() if "changes" in v}
         self.overrides = data.get("overrides") or {}
         self.extras = data.get("extras") or {}
+        self.texts = data.get("texts") or {}
 
     def _save(self):
         if self._store:
             self._store.async_delay_save(
                 lambda: {"prefs": self.prefs, "handled": self.handled, "defs": self.defs,
-                         "overrides": self.overrides, "extras": self.extras}, 2)
+                         "overrides": self.overrides, "extras": self.extras,
+                         "texts": self.texts}, 2)
 
     def start(self):
         self._unsubs = [self.hass.bus.async_listen(
@@ -166,6 +170,30 @@ class Suggestions:
     def pref(self, person, key):
         return self.prefs.setdefault(person, {}).setdefault(
             key, {"yes": 0, "no": 0, "streak": 0, "mode": "ask"})
+
+    # --- texts ----------------------------------------------------------------------
+    def effective(self, d):
+        """The definition with the texts edited in the panel applied."""
+        t = self.texts.get(d["id"]) or {}
+        return {**d, **{k: v for k, v in t.items() if k in TEXT_FIELDS and v}}
+
+    def set_texts(self, sid, values):
+        """Panel edit; an empty value goes back to the automation's text."""
+        cur = dict(self.texts.get(sid) or {})
+        for k in TEXT_FIELDS:
+            if k in (values or {}):
+                v = str(values[k] or "").strip()
+                if v:
+                    if len(v) > 500:
+                        raise ValueError(f"{k} is too long")
+                    cur[k] = v
+                else:
+                    cur.pop(k, None)
+        if cur:
+            self.texts[sid] = cur
+        else:
+            self.texts.pop(sid, None)
+        self._save()
 
     # --- what it does -------------------------------------------------------------
     def name_of(self, eid):
@@ -197,6 +225,7 @@ class Suggestions:
         if self.defs.get(sid) != d:
             self.defs[sid] = d
             self._save()      # the Learned tab shows it even if nobody was asked
+        d = self.effective(d)
         if not self.home.feature("suggestions"):
             return "feature_off"
         period = period_key(d["once_per"], now)
@@ -269,6 +298,7 @@ class Suggestions:
     async def answer(self, key, person, answer, via):
         sid = key.split("@")[0]
         d = self.defs.get(sid)
+        d = self.effective(d) if d else None
         if d is None or answer not in ANSWERS or person not in self.home.people():
             _LOGGER.warning("suggestion answer ignored: %s / %s / %s", key, person, answer)
             return False

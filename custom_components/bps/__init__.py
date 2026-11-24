@@ -2257,7 +2257,8 @@ class BPSLearnedAPI(HomeAssistantView):
             _LOGGER.error("learned: reading the event log failed: %s", e)
             days, recs = [], []
         people = home.people()
-        payload = build_learned(days, recs, sugg.defs, sugg.prefs, people, me, is_admin)
+        defs = {sid: sugg.effective(d) for sid, d in sugg.defs.items()}
+        payload = build_learned(days, recs, defs, sugg.prefs, people, me, is_admin)
         configure = can_configure(hass, request)
         payload["can_configure"] = configure
         for sg in payload["suggestions"]:
@@ -2267,6 +2268,10 @@ class BPSLearnedAPI(HomeAssistantView):
             extras = sugg_plan.visible_extras(sugg.extras.get(sg["id"]), me, configure)
             sg.update(sugg_plan.learned_view(d, sugg.overrides.get(sg["id"]), extras,
                                              home.lights(d["zone"]), sugg.name_of, home.zone_of_entity))
+            eff = defs[sg["id"]]
+            sg["texts"] = {k: eff.get(k, "") for k in ("title", "message", "done_message", "unknown_message")}
+            sg["texts_from_automation"] = {k: d.get(k, "") for k in sg["texts"]}
+            sg["texts_edited"] = sorted(sugg.texts.get(sg["id"], {}))
         payload["all_people"] = {p: {"name": v.get("name", p)} for p, v in people.items()}
         payload["choices"] = _extra_choices(hass, home)
         payload["history_enabled"] = home.feature("history")
@@ -2311,7 +2316,12 @@ class BPSLearnedAPI(HomeAssistantView):
         if sid not in sugg.defs:
             return web.Response(status=400, text="Unknown suggestion")
         try:
-            if op == "override":
+            if op == "texts":
+                if not configure:
+                    return denied()
+                sugg.set_texts(sid, body.get("texts") or {})
+                sugg.publish()
+            elif op == "override":
                 if not configure:
                     return denied()
                 entity = str(body.get("entity") or "")
