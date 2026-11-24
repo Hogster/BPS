@@ -5827,7 +5827,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const name = x.entity === "all_speakers" ? T("All speakers (whole house)") : x.name;
             const icon = x.do.run ? "▶️" : (x.do.media ? "🔈" : "💡");
             const where = x.zone && x.zone !== sg.zone ? `<span class="bps-links-tag">${lnEsc(x.zone)}</span>` : "";
-            const noUndo = x.do.run ? `<span class="bps-links-tag">${lnEsc(T("can't be undone"))}</span>` : "";
+            const noUndo = x.do.run ? `<span class="bps-links-tag">${lnEsc(T("Undo doesn't restore this"))}</span>` : "";
             const boxes = Object.keys(ppl).map((p) => {
                 const mayTick = conf || p === lnData.me;
                 return `<label class="bps-ln-person"><input type="checkbox" data-ln-xperson="${lnEsc(p)}" data-ln-xid="${lnEsc(x.id)}"${x.people.includes(p) ? " checked" : ""}${mayTick ? "" : " disabled"}> ${lnEsc(lnName(p))}</label>`;
@@ -5883,7 +5883,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 m.addEventListener("change", () => { val.querySelector('[data-xf="vol"]').hidden = m.value !== "volume"; });
             } else {
                 ent.innerHTML = opt(c.run);
-                val.innerHTML = `<span class="bps-links-hint">${lnEsc(T("Runs it. Can't be undone."))}</span>`;
+                val.innerHTML = `<span class="bps-links-hint">${lnEsc(T("BPS starts it when you say yes. Undo only restores lights and speakers, not what this changes."))}</span>`;
             }
         };
         kind.addEventListener("change", fill);
