@@ -128,7 +128,8 @@ class BpsPanel extends HTMLElement {
     const token = this._token();
     if (!token) return;
     if (!force && token === this._lastToken) return;
-    cw.postMessage({ type: "bps-auth", token }, window.location.origin);
+    const language = (this._hass && (this._hass.language || (this._hass.locale && this._hass.locale.language))) || null;
+    cw.postMessage({ type: "bps-auth", token, language }, window.location.origin);
     this._lastToken = token;
   }
 }

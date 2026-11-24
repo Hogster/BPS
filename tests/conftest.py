@@ -140,10 +140,16 @@ def _install_homeassistant_stubs():
     helpers.storage = sys.modules["homeassistant.helpers.storage"]
     _module("homeassistant.helpers.event", async_track_state_change_event=lambda *a, **k: None)
     _module("homeassistant.helpers.template", Template=object)
-    _module("homeassistant.core", HomeAssistant=object, callback=lambda f: f)
+    def _callback(func):
+        # Like HA: marks the function, which fails on a bound method.
+        setattr(func, "_hass_callback", True)
+        return func
+
+    _module("homeassistant.core", HomeAssistant=object, callback=_callback)
     _module("homeassistant.helpers.entity_registry")
     _module("homeassistant.helpers.device_registry")
-    _module("homeassistant.const", UnitOfLength=types.SimpleNamespace(METERS="m"))
+    _module("homeassistant.const", UnitOfLength=types.SimpleNamespace(METERS="m"),
+            EVENT_STATE_CHANGED="state_changed")
     _module("homeassistant.util", slugify=lambda s: s)
     _module("homeassistant.util.unit_conversion", DistanceConverter=_FakeDistanceConverter)
     _module(

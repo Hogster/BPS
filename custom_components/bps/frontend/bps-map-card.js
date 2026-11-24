@@ -50,6 +50,35 @@
  *      sensor goes to unknown, so a dead proxy turns red after about half a
  *      minute — and a live proxy with no tracker in range shows red).
  */
+// Card texts follow the Home Assistant language (<html lang>); English fallback.
+const BPS_CARD_SV = {
+  "Configuration loaded.": "Konfigurationen är inläst.",
+  "Floor: {} · {}/{} tracker(s) on this floor.": "Våning: {} · {}/{} spårare på den här våningen.",
+  "No map files found in /local/bps_maps.": "Inga kartfiler hittades i /local/bps_maps.",
+  "Floor (floor name)": "Våning (våningens namn)",
+  "Entities (comma separated sensor.*)": "Entiteter (kommaseparerade sensor.*)",
+  "Map file (optional, filename in www/bps_maps)": "Kartfil (valfritt, filnamn i www/bps_maps)",
+  "Image URL (optional, overrides map file)": "Bildadress (valfritt, ersätter kartfilen)",
+  "Poll interval (seconds)": "Uppdateringsintervall (sekunder)",
+  "Label scale (percent, e.g. 100 or 200)": "Etikettstorlek (procent, t.ex. 100 eller 200)",
+  "Icon scale (percent, e.g. 100 or 200)": "Ikonstorlek (procent, t.ex. 100 eller 200)",
+  "Receiver icon scale (percent, empty = icon scale)": "Mottagarikonens storlek (procent, tomt = ikonstorlek)",
+  "Receiver label scale (percent, empty = label scale)": "Mottagaretikettens storlek (procent, tomt = etikettstorlek)",
+  "Receiver timeout (seconds without adverts, min 10, default 30)": "Mottagarens tidsgräns (sekunder utan signal, minst 10, standard 30)",
+  "Show labels": "Visa etiketter",
+  "Show zone instead of device name": "Visa zon i stället för enhetsnamn",
+  "Show zone / sub-zone labels": "Visa namn på zoner / delzoner",
+  "Show receivers (black = working, red = offline)": "Visa mottagare (svart = fungerar, röd = offline)",
+  "Show receiver labels": "Visa mottagarnas namn",
+  "Show sub-zones": "Visa delzoner",
+  "Show one or more BPS trackers on a floor plan.": "Visa en eller flera BPS-spårare på en planritning.",
+};
+function bpsCardT(text, ...args) {
+  const lang = String(document.documentElement.lang || navigator.language || "en").slice(0, 2).toLowerCase();
+  let out = (lang === "sv" && BPS_CARD_SV[text]) || text;
+  return args.length ? out.replace(/\{\}/g, () => String(args.shift())) : out;
+}
+
 class BpsMapCard extends HTMLElement {
   constructor() {
     super();
@@ -162,7 +191,7 @@ class BpsMapCard extends HTMLElement {
     if (this._hass) {
       this._bootstrapPromise = this._bootstrap(gen);
     }
-    this._setStatus("Configuration loaded.");
+    this._setStatus(bpsCardT("Configuration loaded."));
   }
 
   getCardSize() {
@@ -315,7 +344,7 @@ class BpsMapCard extends HTMLElement {
     const n = this._config.entities.filter((eid) =>
       this._entityOnThisFloor(this._trackerKeyFromEntity(eid)),
     ).length;
-    this._setStatus(`Floor: ${this._config.floor} · ${n}/${tot} tracker(s) on this floor.`);
+    this._setStatus(bpsCardT("Floor: {} · {}/{} tracker(s) on this floor.", this._config.floor, n, tot));
   }
 
   // Close JS approximation of homeassistant.util.slugify (python-slugify with
@@ -713,7 +742,7 @@ class BpsMapCard extends HTMLElement {
     }
     const maps = await mapsRes.json();
     if (!Array.isArray(maps) || maps.length === 0) {
-      throw new Error("No map files found in /local/bps_maps.");
+      throw new Error(bpsCardT("No map files found in /local/bps_maps."));
     }
 
     const normalizedFloor = this._normalize(floorName);
@@ -1108,7 +1137,7 @@ class BpsMapCardEditor extends HTMLElement {
       const row = document.createElement("div");
       row.style.marginBottom = "8px";
       const l = document.createElement("label");
-      l.textContent = label;
+      l.textContent = bpsCardT(label);
       l.style.display = "block";
       l.style.fontSize = "12px";
       const inp = document.createElement("input");
@@ -1142,7 +1171,7 @@ class BpsMapCardEditor extends HTMLElement {
     const entRow = document.createElement("div");
     entRow.style.marginBottom = "8px";
     const entLabel = document.createElement("label");
-    entLabel.textContent = "Entities (comma separated sensor.*)";
+    entLabel.textContent = bpsCardT("Entities (comma separated sensor.*)");
     entLabel.style.display = "block";
     entLabel.style.fontSize = "12px";
     const entInp = document.createElement("input");
@@ -1222,7 +1251,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "bps-map-card",
   name: "BPS Map",
-  description: "Show one or more BPS trackers on a floor plan.",
+  description: bpsCardT("Show one or more BPS trackers on a floor plan."),
   preview: true,
-  documentationURL: "https://github.com/maxi1134/BPS-improved",
+  documentationURL: "https://github.com/Hogster/BPS",
 });

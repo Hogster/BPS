@@ -11,6 +11,8 @@
             <button type="button" class="bps-tab active" data-tab="map" role="tab">Map &amp; Setup</button>
             <button type="button" class="bps-tab" data-tab="calibration" role="tab">Receiver Calibration</button>
             <button type="button" class="bps-tab" data-tab="debugging" role="tab">Debugging</button>
+            <button type="button" class="bps-tab" data-tab="settings" role="tab">Settings</button>
+            <button type="button" class="bps-tab" data-tab="learned" role="tab">Learned</button>
             <button type="button" id="themeToggle" class="bps-theme-toggle" title="Toggle light / dark theme" aria-label="Toggle theme">🌙</button>
         </nav>
 
@@ -257,6 +259,48 @@
                 <div id="calibStatus" class="bps-calib-status"></div>
                 <div id="calibResults" class="bps-calib-matrix"></div>
             </div>
+            <div class="bps-card bps-pl-card" id="placementCard">
+                <div class="bps-section-head">
+                    <h3>Receiver placement</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Shows how precisely BPS can position someone across each floor with the receivers you have, and where one or two extra receivers would help most. Uses your floor plan, the receiver calibration above and the tracker zone history. Nothing is changed.</span>
+                    </span>
+                </div>
+                <p class="bps-pl-lead" data-i18n="placement-lead">Where would one more receiver help most? Red areas are where BPS can't pin people down well; the stars are the best spots for a new receiver, ranked by how much they improve precision <i>where people actually spend time</i>.</p>
+                <div class="bps-calib-controls">
+                    <button type="button" id="plRun" class="bps-btn bps-btn-primary">Analyze</button>
+                    <select id="plFloor" class="bps-input" style="display: none" title="Floor"></select>
+                    <label class="bps-pl-check"><input type="checkbox" id="plShowPicks" checked> Suggested receivers</label>
+                    <label class="bps-pl-check"><input type="checkbox" id="plShowZones" checked> Zone names</label>
+                </div>
+                <div id="plStatus" class="bps-calib-status"></div>
+                <div id="plBody" style="display: none">
+                    <div class="bps-pl-map">
+                        <canvas id="plCanvas"></canvas>
+                        <div class="bps-pl-legend">
+                            <span>Expected error</span>
+                            <span class="bps-pl-scale"></span>
+                            <span class="bps-pl-scale-labels"><span>&lt; 1 m</span><span>2 m</span><span>3 m</span><span>4 m +</span></span>
+                            <span class="bps-pl-key"><i class="bps-pl-dot"></i>receiver</span>
+                            <span class="bps-pl-key"><i class="bps-pl-star">★</i>suggested new receiver</span>
+                        </div>
+                    </div>
+                    <div id="plPicks" class="bps-pl-picks"></div>
+                    <h4 class="bps-pl-h4">Zones, worst first</h4>
+                    <div id="plZones" class="bps-calib-matrix"></div>
+                    <div id="plBounces" class="bps-pl-note"></div>
+                    <details class="bps-pl-how">
+                        <summary>How is this calculated?</summary>
+                        <div data-i18n="placement-how">
+                        <p><b>Distance.</b> A receiver's distance estimate is off by a roughly fixed <i>fraction</i> of the distance, so far-away receivers add little. How big that fraction is comes from your own receiver calibration: receivers measure each other at known distances, which captures walls, floors and mounting. A receiver whose measurements are consistently worse than the rest gets less weight.</p>
+                        <p><b>Geometry.</b> Being close to receivers is not enough; they need to surround you. Three receivers in a row on one side give a poor fix even when they are close, much like GPS satellites bunched in one part of the sky. The map combines distance, number of receivers in range and their spread around each point into one expected error.</p>
+                        <p><b>Where people are.</b> Each zone is weighted by how long trackers stayed there (recorder history of the tracker zone sensors), so a better fix in the kitchen counts more than in a storage room. Short visits that bounce straight back to the previous zone are listed as a reality check: they are what imprecision looks like in daily use.</p>
+                        <p><b>Suggestions.</b> A virtual receiver is tried at every metre inside the zones; the spot that lowers the time-weighted error most wins, then the best second spot given the first. Stars can land in a spot that's impractical (a balcony inside a zone, the middle of a room): use the nearest wall with power.</p>
+                        <p><b>Reading the numbers.</b> The metres come from a simplified model and are on the pessimistic side; the ranking and the relative improvement are what to act on. Re-run after moving or adding a receiver and recalibrating.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
         </section>
 
         <!-- ============================ DEBUGGING ============================ -->
@@ -271,8 +315,173 @@
                 <div id="debuglinking" class="bps-debug"></div>
             </div>
         </section>
+
+        <!-- ============================= SETTINGS ============================= -->
+        <!-- ============================== LEARNED ============================== -->
+        <section class="bps-tabpanel" data-tabpanel="learned">
+            <p id="lnRestricted" class="bps-links-hint" hidden>Floor plans, calibration and settings are managed by a Home Assistant administrator. Here you see what BPS has asked you and learned about you; nobody else's.</p>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Learning</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">BPS learns routines from its local history (Settings → History). It needs 14 days with data, days when someone was home, before it suggests anything on its own. Days away don't count.</span>
+                    </span>
+                </div>
+                <div id="lnProgress"></div>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Suggestions</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Each suggestion BPS has made, per person: Asks (asks every time), Automatic (said yes 3 times in a row, now just happens, with an Undo button), or Never (said "Don't ask again"). Change it here at any time.</span>
+                    </span>
+                </div>
+                <div id="lnSuggestions"></div>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>History</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">The last 30 days of questions, answers, automatic runs and follow-me sessions.</span>
+                    </span>
+                    <select id="lnPerson" class="bps-ln-filter" hidden></select>
+                </div>
+                <div id="lnHistory"></div>
+            </div>
+        </section>
+
+
+        <section class="bps-tabpanel" data-tabpanel="settings">
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Features</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Optional features, off by default. Turning one off stops it for everyone in the home.</span>
+                    </span>
+                </div>
+                <label class="bps-switch bps-set-row">
+                    <input type="checkbox" id="setFollowMe">
+                    <span class="bps-slider"></span>
+                    <span><b>Follow me</b> <span class="bps-links-hint">Music follows a person from room to room. Always opt-in per session: the person starts it from a notification or the app.</span></span>
+                </label>
+                <details class="bps-set-advanced bps-set-indent">
+                    <summary>Follow me buttons for the dashboard</summary>
+                    <p class="bps-links-hint bps-set-help" data-i18n="follow-help">Each person gets <code>sensor.bps_follow_&lt;person&gt;</code>: <code>available</code> while music plays in the zone they are in and nobody else owns it, <code>active</code> while music follows them, otherwise <code>off</code>. When music starts near someone, BPS also asks in a notification. The card below shows <b>Follow me</b> only to the person it is for, and only while it is available, and <b>Stop following</b> while it is active. The buttons call <code>bps.follow_me_start</code> / <code>bps.follow_me_stop</code>, which act for whoever presses them. Persons need a Home Assistant user and at least one tracker (see Persons below); the YAML is built from your Persons settings, so save those first.</p>
+                    <p class="bps-links-hint">Dashboard → Edit → Add card → Manual, paste, save.</p>
+                    <div class="bps-set-code">
+                        <button type="button" class="bps-btn" data-copy="setFollowYaml">Copy</button>
+                        <pre id="setFollowYaml"></pre>
+                    </div>
+                </details>
+                <label class="bps-switch bps-set-row">
+                    <input type="checkbox" id="setSuggestions">
+                    <span class="bps-slider"></span>
+                    <span><b>Suggestions</b> <span class="bps-links-hint">Asks yes/no in a notification (e.g. dim the lights when the TV goes on) and learns from the answers.</span></span>
+                </label>
+                <label class="bps-switch bps-set-row">
+                    <input type="checkbox" id="setHistory">
+                    <span class="bps-slider"></span>
+                    <span data-i18n="history-help"><b>History</b> <span class="bps-links-hint">Keeps a local log of zone changes and manual changes to lights, players, covers and climate (who, where, when), for the history view and for learning routines later. Stored in <code>bps_data/</code> on this Home Assistant only, 3 months. Turn off to stop collecting; follow me and suggestions keep working.</span></span>
+                </label>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Notifications</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Where the Home Assistant app opens when someone taps a BPS notification. Put a card for open questions on that page, so a question is never lost if the notification is dismissed.</span>
+                    </span>
+                </div>
+                <label class="bps-links-label" for="setTapPath">Open this page on tap</label>
+                <input type="text" id="setTapPath" class="bps-modal-input bps-set-input" placeholder="/lovelace/0">
+                <p class="bps-links-hint bps-set-help" data-i18n="notify-help">BPS asks its questions as notifications in the Home Assistant app. A dismissed or missed notification must not lose the question, so BPS also keeps the open question in <code>sensor.bps_suggestion</code> (state <code>ask</code> while a question waits, with <code>title</code> and <code>text</code>). Add the card below to the page above: it only shows while a question is open, and the buttons answer as the person who presses them.</p>
+                <details class="bps-set-advanced">
+                    <summary>Dashboard card (YAML)</summary>
+                    <p class="bps-links-hint">Dashboard → Edit → Add card → Manual, paste, save.</p>
+                    <div class="bps-set-code">
+                        <button type="button" class="bps-btn" data-copy="setCardYaml">Copy</button>
+                        <pre id="setCardYaml">type: conditional
+conditions:
+  - condition: state
+    entity: sensor.bps_suggestion
+    state: ask
+card:
+  type: vertical-stack
+  cards:
+    - type: markdown
+      content: |-
+        ### {{ state_attr('sensor.bps_suggestion', 'title') }}
+        {{ state_attr('sensor.bps_suggestion', 'text') }}
+
+        {{ state_attr('sensor.bps_suggestion', 'changes') }}
+    - type: horizontal-stack
+      cards:
+        - type: button
+          name: "Yes"
+          icon: mdi:check
+          tap_action:
+            action: perform-action
+            perform_action: bps.suggestion_answer
+            data:
+              answer: "yes"
+        - type: button
+          name: "No"
+          icon: mdi:close
+          tap_action:
+            action: perform-action
+            perform_action: bps.suggestion_answer
+            data:
+              answer: "no"
+        - type: button
+          name: Don't ask again
+          icon: mdi:cancel
+          tap_action:
+            action: perform-action
+            perform_action: bps.suggestion_answer
+            data:
+              answer: never</pre>
+                    </div>
+                </details>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Persons</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Link each person to their BPS trackers, best first. The first usable tracker decides the person's zone; one that is charging, not seen, or lying still while a lower one moves is skipped. Result: sensor.bps_person_&lt;name&gt;_zone.</span>
+                    </span>
+                </div>
+                <div id="setPersons"></div>
+                <details class="bps-set-advanced">
+                    <summary>Advanced timing</summary>
+                    <div class="bps-set-grid">
+                        <label>Zone must hold (s)<input type="number" id="setDwell" min="0" max="600" step="1"></label>
+                        <label>Still after (min)<input type="number" id="setStill" min="1" max="240" step="1"></label>
+                        <label>Recent move (s)<input type="number" id="setMoved" min="10" max="3600" step="10"></label>
+                        <label>Move threshold (m)<input type="number" id="setMoveM" min="0.3" max="10" step="0.1"></label>
+                        <label>Not seen after (s)<input type="number" id="setStale" min="10" max="3600" step="10"></label>
+                    </div>
+                </details>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
+                    <h3>Access</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Everyone in Home Assistant can open BPS. By default only administrators can change it; other users only see what is meant for them. Only an administrator can change this setting.</span>
+                    </span>
+                </div>
+                <label class="bps-switch bps-set-row">
+                    <input type="checkbox" id="setAllUsers">
+                    <span class="bps-slider"></span>
+                    <span><b>Full access for all users</b> <span class="bps-links-hint">When on, every Home Assistant user, not only administrators, can change floor plans, zones, calibration and these settings. Learned patterns stay private: each user only ever sees their own.</span></span>
+                </label>
+            </div>
+            <div class="bps-set-actions">
+                <span id="setDirty" class="bps-links-hint"></span>
+                <button type="button" class="bps-btn bps-btn-primary" id="setSave">Save settings</button>
+            </div>
+        </section>
     </div>
 
+    <script src="i18n.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

@@ -1,4 +1,9 @@
 document.addEventListener('DOMContentLoaded', async () => {
+    // Translate a whole sentence (see i18n.js); {} are filled in order.
+    function bpsTr(text, ...args) {
+        if (window.bpsT) return window.bpsT(text, ...args);
+        return args.length ? text.replace(/\{\}/g, () => String(args.shift())) : text;
+    }
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
 
@@ -24,6 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.addEventListener("message", (e) => {
         if (e.origin !== window.location.origin) return;
         if (e.data && e.data.type === "bps-auth" && e.data.token) {
+            if (e.data.language && window.bpsI18n) window.bpsI18n.choose(e.data.language);
             const isNew = e.data.token !== bpsAuthToken;
             bpsAuthToken = e.data.token;
             if (isNew) { _authFailUntil = 0; _authBackoff = 0; _authFails = 0; _authDeadToken = null; } // fresh token: retry now
@@ -50,6 +56,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const headers = Object.assign({}, opts.headers || {});
         if (bpsAuthToken) headers["Authorization"] = "Bearer " + bpsAuthToken;
         const res = await fetch(url, Object.assign({}, opts, { headers }));
+        // A 403 marked X-BPS-Access is an access decision, not a bad token:
+        // keep the token and don't back off the other calls.
+        const accessDenied = res.status === 403 && res.headers.get("X-BPS-Access") === "denied";
+        if (accessDenied) return res;
         if (res.status === 401 || res.status === 403) {
             _authFails += 1;
             _authDeadToken = bpsAuthToken;
@@ -70,6 +80,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         return res;
     }
+    // What this user may do (GET /api/bps/access); assume full until known.
+    let bpsAccess = { is_admin: true, can_configure: true };
+
     const upload = document.getElementById('upload');
     const mapSelector = document.getElementById('mapSelector');
     const entSelector = document.getElementById('entSelector');
@@ -308,6 +321,127 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             document.addEventListener("keydown", onKey);
             okBtn.focus();
+        });
+    }
+
+    // ---- Zone links: HA area, media players and presence sensors per zone ----
+    // Suggestions (same HA area, similar name) are shown unticked with their
+    // reason; only what the user ticks is linked. Resolves to the new links
+    // {area_id, media_players, presence_sensors} or undefined on cancel.
+    const ZONE_LINK_FIELDS = [
+        { key: "media_players", label: "Media players", hint: "Speakers / TVs in this zone" },
+        { key: "presence_sensors", label: "Presence sensors", hint: "Cameras (person count), mmWave, occupancy" },
+        { key: "lights", label: "Lights", hint: "The only lights a suggestion for this zone may change" },
+    ];
+
+    function bpsZoneLinksDialog(zone, payload) {
+        const zid = zone.zone_id || zone.entity_id;
+        const isThis = z => z.zone_id === zid || z.name === zone.entity_id;
+        const info = (payload.zones || []).find(isThis)
+            || { name_matches: {}, suggested_area_id: null };
+        const byId = {};
+        ZONE_LINK_FIELDS.forEach(f => (payload.candidates[f.key] || []).forEach(c => { byId[c.entity_id] = c; }));
+        const areaName = {};
+        (payload.areas || []).forEach(a => { areaName[a.area_id] = a.name; });
+        // Entities another zone already claims: never suggested here.
+        const elsewhere = {};
+        (payload.zones || []).forEach(z => {
+            if (isThis(z)) return;
+            ZONE_LINK_FIELDS.forEach(f => (z[f.key] || []).forEach(e => { elsewhere[e] = z.name; }));
+        });
+        const picked = {};
+        ZONE_LINK_FIELDS.forEach(f => { picked[f.key] = new Set(zone[f.key] || []); });
+
+        return new Promise(resolve => {
+            const overlay = document.createElement("div");
+            overlay.className = "bps-modal-overlay";
+            const dialog = document.createElement("div");
+            dialog.className = "bps-modal bps-links-modal";
+            const suggestedArea = zone.area_id ? null : info.suggested_area_id;
+            const areaOpts = ['<option value="">— No area —</option>']
+                .concat((payload.areas || []).map(a =>
+                    `<option value="${escHtml(a.area_id)}">${escHtml(a.name)}${a.area_id === suggestedArea ? " (suggested)" : ""}</option>`));
+            dialog.innerHTML =
+                `<div class="bps-modal-msg"><b>Link devices — ${escHtml(zone.entity_id)}</b><br>`
+                + `<span class="bps-links-hint">Pick what belongs to this zone. Suggestions come from the HA area and from names; nothing is linked until you tick it.</span></div>`
+                + `<label class="bps-links-label">Home Assistant area</label>`
+                + `<select class="bps-modal-input bps-links-area">${areaOpts.join("")}</select>`
+                + ZONE_LINK_FIELDS.map(f =>
+                    `<div class="bps-links-section" data-field="${f.key}">`
+                    + `<label class="bps-links-label">${f.label} <span class="bps-links-hint">${f.hint}</span></label>`
+                    + `<div class="bps-links-list"></div>`
+                    + `<select class="bps-modal-input bps-links-add"></select></div>`).join("")
+                + `<div class="bps-modal-actions"><button type="button" class="bps-btn bps-btn-outline" data-act="cancel">Cancel</button>`
+                + `<button type="button" class="bps-btn bps-btn-primary" data-act="ok">Apply</button></div>`;
+            overlay.appendChild(dialog);
+            document.body.appendChild(overlay);
+
+            const areaSel = dialog.querySelector(".bps-links-area");
+            areaSel.value = zone.area_id || suggestedArea || "";
+
+            const render = () => {
+                const area = areaSel.value || null;
+                ZONE_LINK_FIELDS.forEach(f => {
+                    const sec = dialog.querySelector(`.bps-links-section[data-field="${f.key}"]`);
+                    const rows = [];
+                    const seen = new Set();
+                    const row = (eid, reason, checked) => {
+                        if (seen.has(eid)) return;
+                        seen.add(eid);
+                        const c = byId[eid];
+                        const label = c ? c.name : eid;
+                        rows.push(`<label class="bps-links-row${c ? "" : " bps-links-missing"}">`
+                            + `<input type="checkbox" data-eid="${escHtml(eid)}"${checked ? " checked" : ""}>`
+                            + `<span title="${escHtml(eid)}">${escHtml(label)}</span>`
+                            + (reason ? `<span class="bps-links-tag">${escHtml(reason)}</span>` : "")
+                            + `</label>`);
+                    };
+                    picked[f.key].forEach(eid => row(eid, byId[eid] ? "" : "not found", true));
+                    (payload.candidates[f.key] || []).forEach(c => {
+                        if (area && c.area_id === area && !elsewhere[c.entity_id]) row(c.entity_id, "same area", false);
+                    });
+                    ((info.name_matches || {})[f.key] || []).forEach(m => {
+                        if (!elsewhere[m.entity_id]) row(m.entity_id, `name ${Math.round(m.score * 100)}%`, false);
+                    });
+                    sec.querySelector(".bps-links-list").innerHTML =
+                        rows.join("") || '<span class="bps-links-hint">Nothing linked or suggested.</span>';
+                    const add = sec.querySelector(".bps-links-add");
+                    add.innerHTML = '<option value="">+ Add other…</option>'
+                        + (payload.candidates[f.key] || []).filter(c => !seen.has(c.entity_id)).map(c =>
+                            `<option value="${escHtml(c.entity_id)}">${escHtml(c.name)}`
+                            + `${c.area_id && areaName[c.area_id] ? " · " + escHtml(areaName[c.area_id]) : ""}`
+                            + `${elsewhere[c.entity_id] ? " · in " + escHtml(elsewhere[c.entity_id]) : ""}</option>`).join("");
+                });
+            };
+            render();
+
+            areaSel.addEventListener("change", render);
+            dialog.addEventListener("change", (e) => {
+                const sec = e.target.closest(".bps-links-section");
+                if (!sec) return;
+                const key = sec.getAttribute("data-field");
+                if (e.target.matches('input[type="checkbox"]')) {
+                    const eid = e.target.getAttribute("data-eid");
+                    if (e.target.checked) picked[key].add(eid); else picked[key].delete(eid);
+                } else if (e.target.matches(".bps-links-add") && e.target.value) {
+                    picked[key].add(e.target.value);
+                    render();
+                }
+            });
+            const close = (val) => {
+                overlay.remove();
+                document.removeEventListener("keydown", onKey);
+                resolve(val);
+            };
+            function onKey(e) { if (e.key === "Escape") close(undefined); }
+            document.addEventListener("keydown", onKey);
+            overlay.addEventListener("click", (e) => { if (e.target === overlay) close(undefined); });
+            dialog.querySelector('[data-act="cancel"]').addEventListener("click", () => close(undefined));
+            dialog.querySelector('[data-act="ok"]').addEventListener("click", () => {
+                const out = { area_id: areaSel.value || null };
+                ZONE_LINK_FIELDS.forEach(f => { out[f.key] = Array.from(picked[f.key]); });
+                close(out);
+            });
         });
     }
 
@@ -1987,6 +2121,35 @@ document.addEventListener('DOMContentLoaded', async () => {
                 clearCanvas();
                 drawElements();
             });
+            return;
+        }
+        if (event.target.closest('[data-type="zonelinks"]')) {
+            const id = event.target.closest('[data-type="zonelinks"]').getAttribute('data-id');
+            const floor = finalcords.floor.find(f => sameFloorName(f.name, SelMapName));
+            const zone = floor && (floor.zones || []).find(z => (z.zone_id || z.entity_id) === id);
+            if (!zone) return;
+            if (!zone.zone_id) zone.zone_id = createZoneId();  // stable id for the payload lookup
+            (async () => {
+                let payload;
+                try {
+                    const res = await bpsFetch("/api/bps/zone_links");
+                    if (!res.ok) throw new Error(res.status);
+                    payload = await res.json();
+                } catch (e) {
+                    bpsToast("Could not load Home Assistant devices.");
+                    return;
+                }
+                const links = await bpsZoneLinksDialog(zone, payload);
+                if (!links) return;
+                if (links.area_id) zone.area_id = links.area_id; else delete zone.area_id;
+                ZONE_LINK_FIELDS.forEach(f => {
+                    if (links[f.key].length) zone[f.key] = links[f.key]; else delete zone[f.key];
+                });
+                savebuttondiv.appendChild(saveButton);
+                clearCanvas();
+                drawElements();
+                bpsToast(`Links for "${zone.entity_id}" updated — Save Floor Plan to keep them.`);
+            })();
             return;
         }
         if (event.target.closest('[data-type="editzone"]')) {
@@ -3985,6 +4148,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Hatched square — mirrors the grey diagonal hatching a no-go zone gets
         // on the map, and is unmistakably different from the colour-toggle's
         // slashed circle (they used to be two near-identical circles).
+        const linkSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>';
         const noGoSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="3" y1="14" x2="14" y2="3"></line><line x1="9" y1="21" x2="21" y2="9"></line></svg>';
         // Stable per-floor suffix so the two synthetic groups ("No zone" /
         // "Unlinked sub-zones") collapse independently on each floor, like real
@@ -4062,10 +4226,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             const zoneColor = zoneDisplayColor(zone, zi);
             const uncolored = !!zone.uncolored;
             const noGo = !!zone.no_go;
+            const linkCount = (zone.media_players || []).length + (zone.presence_sensors || []).length + (zone.lights || []).length + (zone.area_id ? 1 : 0);
             const zoneActions = '<span class="bps-zone-actions">'
                 + `<input type="color" class="bps-zone-swatch${uncolored ? ' bps-swatch-off' : ''}" data-type="zonecolor" data-id="${escHtml(zoneDomId)}" value="${colorToHex(zoneColor)}" title="Pick zone colour">`
                 + `<button class="bps-icon-btn" title="${uncolored ? 'Add colour' : 'Remove colour'}" data-type="zonetogglecolor" data-id="${escHtml(zoneDomId)}">${uncolored ? colorOnSvg : colorOffSvg}</button>`
                 + `<button class="bps-icon-btn bps-nogo-btn${noGo ? ' bps-nogo-on' : ''}" title="${noGo ? 'Unmark no-go zone' : 'Mark as no-go (dead space — nothing can be here)'}" data-type="zonetogglenogo" data-id="${escHtml(zoneDomId)}">${noGoSvg}</button>`
+                + `<button class="bps-icon-btn${linkCount ? ' bps-links-on' : ''}" title="Link HA area, media players and presence sensors" data-type="zonelinks" data-id="${escHtml(zoneDomId)}">${linkSvg}</button>`
                 + `<button class="bps-icon-btn" title="Edit zone" data-type="editzone" data-id="${escHtml(zoneDomId)}">${pencilSvg}</button>`
                 + `<button class="bps-icon-btn" title="Remove zone" data-type="removezone" data-id="${escHtml(zoneDomId)}">${trashSvg}</button>`
                 + '</span>';
@@ -4908,19 +5074,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             else calibResults.innerHTML = '';
             // Set the status line AFTER rendering the result, which writes its
             // own summary into it; the auto line carries the result summary too.
-            let line = `Auto calibration running · ${pairs} receiver pairs in the window`;
+            let line = bpsTr("Auto calibration running · {} receiver pairs in the window", pairs);
             if (status.error) line += ` · ${status.error}`;
-            else if (status.last_solved_at) line += ` · last solve ${status.last_solved_at}`;
-            else line += ' · first solve after a few minutes of data';
+            else if (status.last_solved_at) line += " " + bpsTr("· last solve {}", status.last_solved_at);
+            else line += " " + bpsTr("· first solve after a few minutes of data");
             if (result) {
-                line += ` · floor ${result.floor}: ${result.pairs_used} pairs used, `
-                    + `typical error ×${result.error_factor_before} → ×${result.error_factor_after}`;
+                line += " " + bpsTr("· floor {}: {} pairs used,", result.floor, result.pairs_used) + " "
+                    + bpsTr("typical error ×{} → ×{}", result.error_factor_before, result.error_factor_after);
                 // Keep the missing-receiver pointer (issue #63) — this line
                 // replaces the one renderCalibrationResult just wrote. Same
                 // reconciled lists so a replaced receiver isn't counted.
                 const m = calibMissingNow(result);
                 const missing = m.missUnmatched.length + m.missNoData.length;
-                if (missing) line += ` · ${missing} placed receiver${missing > 1 ? "s" : ""} missing — see below`;
+                if (missing) line += " " + bpsTr(missing > 1 ? "· {} placed receivers missing — see below" : "· {} placed receiver missing — see below", missing);
             }
             calibStatus.textContent = line;
             return;
@@ -4930,8 +5096,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const left = status.seconds_left || 0;
             const done = total - left;
             calibStatus.textContent =
-                `Sampling floor ${status.floor}… ${Math.floor(done / 60)}:${String(done % 60).padStart(2, '0')}`
-                + ` of ${Math.floor(total / 60)} min · ${pairs} receiver pairs heard so far.`
+                bpsTr("Sampling floor {}… {}:{}", status.floor, Math.floor(done / 60), String(done % 60).padStart(2, '0'))
+                + " " + bpsTr("of {} min · {} receiver pairs heard so far.", Math.floor(total / 60), pairs)
                 + (pairs ? '' : calibNoPairsHint(status.last_dump));
             return;
         }
@@ -5057,6 +5223,464 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     pollCalibration();
 
+    // =================================================================
+    // Settings tab: features, notification tap target, persons + trackers
+    // =================================================================
+    let setData = null;      // last GET payload
+    let setDraft = null;     // settings being edited
+    let setStatusTimer = null;
+
+    function setMarkDirty(dirty = true) {
+        document.getElementById("setDirty").textContent = dirty ? "Unsaved changes" : "";
+    }
+
+    async function loadSettings() {
+        try {
+            const res = await bpsFetch("/api/bps/settings");
+            if (!res.ok) throw new Error(res.status);
+            setData = await res.json();
+        } catch (e) {
+            bpsToast("Could not load BPS settings.");
+            return;
+        }
+        setDraft = JSON.parse(JSON.stringify(setData.settings));
+        document.getElementById("setFollowMe").checked = !!setDraft.features.follow_me;
+        document.getElementById("setSuggestions").checked = !!setDraft.features.suggestions;
+        document.getElementById("setHistory").checked = setDraft.features.history !== false;
+        document.getElementById("setAllUsers").checked = !!(setDraft.access || {}).all_users;
+        document.getElementById("setAllUsers").disabled = !bpsAccess.is_admin;
+        document.getElementById("setTapPath").value = setDraft.notify.tap_path || "";
+        const t = setDraft.tracking;
+        document.getElementById("setDwell").value = t.dwell_s;
+        document.getElementById("setStill").value = t.still_min;
+        document.getElementById("setMoved").value = t.moved_recent_s;
+        document.getElementById("setMoveM").value = t.move_m;
+        document.getElementById("setStale").value = t.stale_s;
+        renderPersons();
+        renderFollowYaml();
+        setMarkDirty(false);
+    }
+
+    async function refreshSettingsStatus() {
+        try {
+            const res = await bpsFetch("/api/bps/settings");
+            if (!res.ok) return;
+            const fresh = await res.json();
+            setData.status = fresh.status;
+            document.querySelectorAll("[data-set-status]").forEach(el => {
+                const [pid, key] = el.getAttribute("data-set-status").split("|");
+                const st = ((fresh.status[pid] || {}).trackers || {})[key];
+                el.textContent = st || "—";
+                el.className = "bps-links-tag" + (st === "active" ? " bps-set-active" : "");
+            });
+            document.querySelectorAll("[data-set-zone]").forEach(el => {
+                const z = (fresh.status[el.getAttribute("data-set-zone")] || {}).zone;
+                el.textContent = z ? "📍 " + z : "";
+            });
+        } catch (e) { /* next tick */ }
+    }
+
+    function renderPersons() {
+        const host = document.getElementById("setPersons");
+        const ch = setData.choices;
+        if (!ch.people.length) {
+            host.innerHTML = '<p class="bps-links-hint">No people in Home Assistant yet (Settings → People).</p>';
+            return;
+        }
+        const trackerInfo = {};
+        ch.trackers.forEach(t => { trackerInfo[t.key] = t; });
+        const used = new Set();
+        Object.values(setDraft.persons).forEach(p => (p.trackers || []).forEach(t => used.add(t.key)));
+        host.innerHTML = ch.people.map(person => {
+            const pid = person.entity_id;
+            const p = setDraft.persons[pid] || { trackers: [], notify: null };
+            const status = (setData.status[pid] || {});
+            const rows = p.trackers.map((t, i) => {
+                const st = (status.trackers || {})[t.key];
+                const kindOpts = ch.kinds.map(k => `<option value="${k}"${k === t.kind ? " selected" : ""}>${k}</option>`).join("");
+                const chargeOpts = ['<option value="">no charging sensor</option>']
+                    .concat(ch.charging.map(c => `<option value="${escHtml(c)}"${c === t.charging ? " selected" : ""}>${escHtml(c)}</option>`)).join("");
+                return `<div class="bps-set-tracker" data-pid="${escHtml(pid)}" data-idx="${i}">`
+                    + `<span class="bps-set-prio">${i + 1}</span>`
+                    + `<span class="bps-set-key" title="${escHtml(t.key)}">${escHtml(t.key)}${trackerInfo[t.key] ? "" : ' <span class="bps-links-tag">not tracked</span>'}</span>`
+                    + `<select data-set="kind">${kindOpts}</select>`
+                    + `<select data-set="charging">${chargeOpts}</select>`
+                    + `<span class="bps-links-tag${st === "active" ? " bps-set-active" : ""}" data-set-status="${escHtml(pid)}|${escHtml(t.key)}">${escHtml(st || "—")}</span>`
+                    + `<button class="bps-icon-btn" data-set="up" title="Higher priority"${i === 0 ? " disabled" : ""}>↑</button>`
+                    + `<button class="bps-icon-btn" data-set="down" title="Lower priority"${i === p.trackers.length - 1 ? " disabled" : ""}>↓</button>`
+                    + `<button class="bps-icon-btn" data-set="remove" title="Remove">✕</button>`
+                    + `</div>`;
+            }).join("");
+            const sugg = new Set(person.trackers_suggested || []);
+            const addable = ch.trackers.filter(t => !used.has(t.key));
+            addable.sort((a, b) => (sugg.has(b.key) - sugg.has(a.key)) || a.key.localeCompare(b.key));
+            const addOpts = '<option value="">+ Add tracker…</option>' + addable.map(t =>
+                `<option value="${escHtml(t.key)}">${escHtml(t.key)}${sugg.has(t.key) ? " (suggested)" : ""}</option>`).join("");
+            const notifyOpts = [`<option value="">automatic${person.notify_suggested ? " (" + escHtml(person.notify_suggested) + ")" : " (none found)"}</option>`]
+                .concat(ch.notify.map(n => `<option value="${escHtml(n)}"${n === p.notify ? " selected" : ""}>${escHtml(n)}</option>`)).join("");
+            return `<div class="bps-set-person" data-pid="${escHtml(pid)}">`
+                + `<div class="bps-set-person-head"><b>${escHtml(person.name)}</b>`
+                + ` <span class="bps-links-hint">${escHtml(pid)}</span>`
+                + ` <span class="bps-set-zone" data-set-zone="${escHtml(pid)}">${status.zone ? "📍 " + escHtml(status.zone) : ""}</span></div>`
+                + (rows || '<p class="bps-links-hint">No trackers linked.</p>')
+                + `<div class="bps-set-person-foot"><select data-set="add">${addOpts}</select>`
+                + `<label class="bps-links-hint">Notify <select data-set="notify">${notifyOpts}</select></label></div>`
+                + `</div>`;
+        }).join("");
+    }
+
+    function personDraft(pid) {
+        if (!setDraft.persons[pid]) setDraft.persons[pid] = { trackers: [], notify: null };
+        return setDraft.persons[pid];
+    }
+
+    const setPersonsHost = document.getElementById("setPersons");
+    setPersonsHost.addEventListener("change", (e) => {
+        const what = e.target.getAttribute("data-set");
+        const box = e.target.closest("[data-pid]");
+        if (!what || !box) return;
+        const pid = box.getAttribute("data-pid");
+        const p = personDraft(pid);
+        if (what === "add" && e.target.value) {
+            const info = setData.choices.trackers.find(t => t.key === e.target.value) || {};
+            p.trackers.push({ key: e.target.value, kind: info.kind || "tag", charging: info.charging || null });
+            renderPersons();
+        } else if (what === "notify") {
+            p.notify = e.target.value || null;
+        } else if (what === "kind" || what === "charging") {
+            const idx = Number(box.getAttribute("data-idx"));
+            p.trackers[idx][what] = e.target.value || null;
+        }
+        setMarkDirty();
+    });
+    setPersonsHost.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-set]");
+        const box = e.target.closest(".bps-set-tracker");
+        if (!btn || !box) return;
+        const p = personDraft(box.getAttribute("data-pid"));
+        const i = Number(box.getAttribute("data-idx"));
+        const what = btn.getAttribute("data-set");
+        if (what === "remove") p.trackers.splice(i, 1);
+        else if (what === "up" && i > 0) [p.trackers[i - 1], p.trackers[i]] = [p.trackers[i], p.trackers[i - 1]];
+        else if (what === "down" && i < p.trackers.length - 1) [p.trackers[i + 1], p.trackers[i]] = [p.trackers[i], p.trackers[i + 1]];
+        renderPersons();
+        setMarkDirty();
+    });
+    ["setFollowMe", "setSuggestions", "setHistory", "setAllUsers", "setTapPath", "setDwell", "setStill", "setMoved", "setMoveM", "setStale"]
+        .forEach(id => document.getElementById(id).addEventListener("input", () => setMarkDirty()));
+
+    document.getElementById("setSave").addEventListener("click", async () => {
+        if (!setDraft) return;
+        setDraft.features.follow_me = document.getElementById("setFollowMe").checked;
+        setDraft.features.suggestions = document.getElementById("setSuggestions").checked;
+        setDraft.features.history = document.getElementById("setHistory").checked;
+        setDraft.access = { all_users: document.getElementById("setAllUsers").checked };
+        setDraft.notify.tap_path = document.getElementById("setTapPath").value.trim();
+        setDraft.tracking = {
+            dwell_s: Number(document.getElementById("setDwell").value),
+            still_min: Number(document.getElementById("setStill").value),
+            moved_recent_s: Number(document.getElementById("setMoved").value),
+            move_m: Number(document.getElementById("setMoveM").value),
+            stale_s: Number(document.getElementById("setStale").value),
+        };
+        // Drop people with nothing configured so the store stays tidy.
+        Object.keys(setDraft.persons).forEach(pid => {
+            const p = setDraft.persons[pid];
+            if (!p.trackers.length && !p.notify) delete setDraft.persons[pid];
+        });
+        try {
+            const res = await bpsFetch("/api/bps/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(setDraft),
+            });
+            if (!res.ok) {
+                bpsToast(res.status === 403 ? "You don't have access to change BPS settings."
+                    : "Not saved: " + (await res.text()));
+                return;
+            }
+            setData = await res.json();
+            setDraft = JSON.parse(JSON.stringify(setData.settings));
+            renderPersons();
+            renderFollowYaml();
+            setMarkDirty(false);
+            bpsToast("Settings saved.");
+        } catch (e) {
+            bpsToast("Could not save settings.");
+        }
+    });
+
+    document.querySelectorAll("[data-copy]").forEach((btn) => btn.addEventListener("click", async () => {
+        const pre = document.getElementById(btn.getAttribute("data-copy"));
+        try {
+            await navigator.clipboard.writeText(pre.textContent);
+            bpsToast("Card YAML copied.");
+        } catch (e) {
+            // Clipboard API can be blocked in the panel iframe: select instead.
+            const r = document.createRange();
+            r.selectNodeContents(pre);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(r);
+            bpsToast("Press Ctrl/Cmd+C to copy.");
+        }
+    }));
+
+    // Follow me card YAML, built from the saved persons: per person a
+    // "Follow me" button (state available) and a "Stop following" button
+    // (state active), each visible only to that person's HA user.
+    function renderFollowYaml() {
+        const pre = document.getElementById("setFollowYaml");
+        if (!pre || !setData) return;
+        const saved = setData.settings.persons || {};
+        const people = setData.choices.people.filter(p =>
+            p.user_id && saved[p.entity_id] && (saved[p.entity_id].trackers || []).length);
+        if (!people.length) {
+            pre.textContent = "# No person has both a Home Assistant user and a tracker yet.\n"
+                + "# Link trackers under Persons, save, and the card appears here.";
+            return;
+        }
+        const btn = (uid, sensor, st, name, icon, action) => [
+            "  - type: conditional",
+            "    conditions:",
+            "      - condition: user",
+            "        users:",
+            `          - ${uid}`,
+            "      - condition: state",
+            `        entity: ${sensor}`,
+            `        state: ${st}`,
+            "    card:",
+            "      type: button",
+            `      name: ${name}`,
+            `      icon: ${icon}`,
+            "      tap_action:",
+            "        action: perform-action",
+            `        perform_action: ${action}`,
+        ];
+        const lines = ["type: vertical-stack", "cards:"];
+        people.forEach(p => {
+            const sensor = "sensor.bps_follow_" + p.entity_id.split(".")[1];
+            lines.push(`  # ${p.name}`);
+            lines.push(...btn(p.user_id, sensor, "available", "Follow me", "mdi:music-note-plus", "bps.follow_me_start"));
+            lines.push(...btn(p.user_id, sensor, "active", "Stop following", "mdi:music-note-off", "bps.follow_me_stop"));
+        });
+        pre.textContent = lines.join("\n");
+    }
+
+    function onSettingsTab(active) {
+        clearInterval(setStatusTimer);
+        setStatusTimer = null;
+        if (!active) return;
+        if (!setData) loadSettings();
+        setStatusTimer = setInterval(refreshSettingsStatus, 5000);
+    }
+
+    // --- Receiver placement advisor (Receiver Calibration tab) ---------------
+    // Heat map of the expected position error per floor + the best spots for
+    // one or two extra receivers (GET /api/bps/placement, read-only).
+    let plData = null;
+    const plImgCache = {};
+
+    function plColor(err, alpha) {
+        // 0.5 m green -> 2 m yellow -> 3 m orange -> 4 m+ red
+        const t = Math.max(0, Math.min(1, (err - 0.5) / 3.5));
+        const hue = 140 - 140 * t;
+        return `hsla(${hue}, ${70 + 20 * t}%, ${42 + 8 * Math.sin(Math.PI * t)}%, ${alpha})`;
+    }
+
+    function plLoadImage(url) {
+        if (!url) return Promise.resolve(null);
+        if (plImgCache[url]) return Promise.resolve(plImgCache[url]);
+        return new Promise((resolve) => {
+            const im = new Image();
+            im.onload = () => { plImgCache[url] = im; resolve(im); };
+            im.onerror = () => resolve(null);
+            im.src = url;
+        });
+    }
+
+    function plFmtH(h) {
+        if (!h) return "—";
+        return h < 1 ? `${Math.round(h * 60)} min` : `${h.toFixed(1)} h`;
+    }
+
+    async function plRender() {
+        if (!plData) return;
+        const fl = plData.floors.find(f => f.name === document.getElementById("plFloor").value) || plData.floors[0];
+        const cv = document.getElementById("plCanvas");
+        const body = document.getElementById("plBody");
+        if (!fl || !fl.ok) {
+            body.style.display = "none";
+            document.getElementById("plStatus").textContent =
+                `${fl ? fl.name : "This floor"}: ${fl && fl.reason ? fl.reason : "nothing to analyze"}.`;
+            return;
+        }
+        body.style.display = "";
+        const im = await plLoadImage(fl.image);
+        const g = fl.grid;
+        const W = 2000;
+        const H = im ? Math.round(W * im.height / im.width) : Math.ceil(g.y0 + g.ny * g.step + 40);
+        cv.width = W;
+        cv.height = H;
+        const ctx = cv.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, W, H);
+        if (im) {
+            ctx.drawImage(im, 0, 0, W, H);
+            ctx.fillStyle = "rgba(255,255,255,0.35)";
+            ctx.fillRect(0, 0, W, H);
+        }
+        // heat cells: strong inside zones, faint outside
+        for (let j = 0; j < g.ny; j++) {
+            for (let i = 0; i < g.nx; i++) {
+                const k = j * g.nx + i;
+                ctx.fillStyle = plColor(g.err[k], g.in_zone[k] ? 0.5 : 0.12);
+                ctx.fillRect(g.x0 + i * g.step, g.y0 + j * g.step, g.step + 0.6, g.step + 0.6);
+            }
+        }
+        // zones
+        const showZones = document.getElementById("plShowZones").checked;
+        const byZone = {};
+        fl.zones.forEach(z => { byZone[z.zone] = z; });
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(30,30,30,0.75)";
+        fl.zone_rings.forEach(z => {
+            ctx.beginPath();
+            z.ring.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+            ctx.closePath();
+            ctx.stroke();
+            if (showZones) {
+                const cx = z.ring.reduce((a, p) => a + p[0], 0) / z.ring.length;
+                const cy = z.ring.reduce((a, p) => a + p[1], 0) / z.ring.length;
+                const st = byZone[z.name];
+                const label = st ? `${z.name} · ${st.err_m.toFixed(1)} m` : z.name;
+                ctx.font = "600 30px system-ui, sans-serif";
+                const tw = ctx.measureText(label).width;
+                ctx.fillStyle = "rgba(255,255,255,0.85)";
+                ctx.fillRect(cx - tw / 2 - 8, cy - 22, tw + 16, 40);
+                ctx.fillStyle = "#111";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(label, cx, cy);
+            }
+        });
+        // receivers
+        fl.receivers.forEach(r => {
+            ctx.beginPath();
+            ctx.arc(r.x, r.y, 15, 0, Math.PI * 2);
+            ctx.fillStyle = "hsl(217, 85%, 47%)";
+            ctx.fill();
+            ctx.lineWidth = 5;
+            ctx.strokeStyle = "#fff";
+            ctx.stroke();
+        });
+        // suggested receivers
+        if (document.getElementById("plShowPicks").checked) {
+            fl.picks.forEach((p, i) => {
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.beginPath();
+                for (let k = 0; k < 10; k++) {
+                    const rad = k % 2 ? 17 : 40;
+                    const a = -Math.PI / 2 + k * Math.PI / 5;
+                    ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+                }
+                ctx.closePath();
+                ctx.fillStyle = "hsl(45, 100%, 52%)";
+                ctx.fill();
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = "#111";
+                ctx.stroke();
+                ctx.fillStyle = "#111";
+                ctx.font = "700 26px system-ui, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(String(i + 1), 0, 3);
+                ctx.restore();
+            });
+        }
+
+        // suggestion cards
+        const picks = fl.picks.map((p, i) =>
+            `<div class="bps-pl-pick"><span class="num">${i + 1}</span><b>${escHtml(p.zone)}</b>`
+            + `<b class="big">−${p.gain_pct.toFixed(0)} %</b>`
+            + escHtml(bpsTr(i === 0
+                ? "Lowers the expected error where people spend time on this floor from {} m to {} m."
+                : "On top of #1, lowers the expected error where people spend time on this floor from {} m to {} m.",
+                p.weighted_err_before_m.toFixed(1), p.weighted_err_after_m.toFixed(1)))
+            + " " + escHtml(bpsTr("In {} itself: {} → {} m.", p.zone, p.zone_err_before_m.toFixed(1), p.zone_err_after_m.toFixed(1)))
+            + `</div>`).join("");
+        document.getElementById("plPicks").innerHTML = picks
+            || '<p class="bps-pl-note">No spot would make a meaningful difference — coverage is already even.</p>';
+
+        // zone table
+        const rows = fl.zones.map(z => {
+            const flapPct = z.visits ? Math.round(100 * z.flaps / z.visits) : null;
+            return `<tr><td><span class="bps-pl-swatch" style="background:${plColor(z.err_m, 1)}"></span>${escHtml(z.zone)}</td>`
+                + `<td class="num">${z.err_m.toFixed(1)} m</td>`
+                + `<td class="num">${z.near_receivers}</td>`
+                + `<td class="num">${z.avg_dist_m.toFixed(1)} m</td>`
+                + `<td class="num">${plFmtH(z.dwell_h)}</td>`
+                + `<td class="num">${z.visits ? escHtml(bpsTr("{} of {}", z.flaps, z.visits)) : "—"}${flapPct !== null && flapPct >= 40 && z.visits >= 5 ? ' <span class="bps-links-tag">jumpy</span>' : ""}</td></tr>`;
+        }).join("");
+        document.getElementById("plZones").innerHTML =
+            '<table class="bps-pl-table"><thead><tr><th>Zone</th>'
+            + '<th title="Average expected position error inside the zone">Expected error</th>'
+            + '<th title="Receivers within 6 m of the zone centre">Receivers ≤ 6 m</th>'
+            + '<th title="Average distance from the zone centre to all receivers on the floor">Avg. distance</th>'
+            + `<th title="Time trackers spent in the zone over the last ${plData.history_days} days">Time spent</th>`
+            + '<th title="Visits shorter than a minute — a sign of position jitter">Short visits</th></tr></thead>'
+            + `<tbody>${rows}</tbody></table>`;
+
+        const zonesHere = new Set(fl.zones.map(z => z.zone));
+        const bounces = (plData.bounces || []).filter(b => zonesHere.has(b.from) || zonesHere.has(b.to)).slice(0, 4);
+        document.getElementById("plBounces").innerHTML = bounces.length
+            ? escHtml(bpsTr("Most frequent jumps that came straight back:")) + " " + bounces.map(b =>
+                `<b>${escHtml(b.from)} → ${escHtml(b.to)} → ${escHtml(b.from)}</b> (${b.n}×)`).join(", ")
+              + ". " + escHtml(bpsTr("A receiver near that boundary, or a longer zone dwell time, makes these go away."))
+            : "";
+    }
+
+    async function plRun() {
+        const btn = document.getElementById("plRun");
+        const status = document.getElementById("plStatus");
+        btn.disabled = true;
+        status.textContent = "Analyzing… this takes a few seconds.";
+        try {
+            const res = await bpsFetch("/api/bps/placement");
+            if (!res.ok) throw new Error(res.status);
+            plData = await res.json();
+        } catch (e) {
+            status.textContent = "The analysis failed — see the Home Assistant log.";
+            btn.disabled = false;
+            return;
+        }
+        btn.disabled = false;
+        btn.textContent = bpsTr("Re-analyze");
+        const sel = document.getElementById("plFloor");
+        const prev = sel.value;
+        sel.innerHTML = plData.floors.map(f => `<option value="${escHtml(f.name)}">${escHtml(f.name)}</option>`).join("");
+        if (plData.floors.some(f => f.name === prev)) sel.value = prev;
+        else if (SelMapName && plData.floors.some(f => f.name === SelMapName)) sel.value = SelMapName;
+        sel.style.display = plData.floors.length > 1 ? "" : "none";
+        const m = plData.model, u = plData.usage;
+        status.textContent = (m.calibrated
+                ? bpsTr("Noise model fitted on {} receiver pairs from the calibration.", m.pairs)
+                : bpsTr("No receiver calibration yet — using a generic noise model. Run calibration above for wall-aware results."))
+            + " " + (u.dwell_h > 0
+                ? (u.source === "recorder"
+                    ? bpsTr("Weighted by {} h of tracker history from the recorder (last {} days).", u.dwell_h.toFixed(0), plData.history_days)
+                    : bpsTr(u.days === 1 ? "Weighted by {} h of time in zones collected by BPS over {} day (keeps the last 14)."
+                        : "Weighted by {} h of time in zones collected by BPS over {} days (keeps the last 14).", u.dwell_h.toFixed(0), u.days))
+                : bpsTr("No time-in-zone data yet — all zones weigh the same for now. BPS collects it from today, so re-run in a few days."));
+        plRender();
+    }
+
+    document.getElementById("plRun").addEventListener("click", plRun);
+    document.getElementById("plFloor").addEventListener("change", plRender);
+    document.getElementById("plShowPicks").addEventListener("change", plRender);
+    document.getElementById("plShowZones").addEventListener("change", plRender);
+
     // Tab switching: show one panel at a time. The Map tab is active in the
     // markup so the canvas is visible (and sized) on load; the calibration
     // poll keeps running regardless of which tab is showing.
@@ -5071,8 +5695,389 @@ document.addEventListener('DOMContentLoaded', async () => {
             // Opening the Debugging tab re-checks the linking snapshot so its live
             // readings are current (they drift as devices move / go out of range).
             if (name === "debugging" && !scannerLinkingLoading) loadScannerLinking();
+            onSettingsTab(name === "settings");
+            if (name === "learned") loadLearned();
         });
     });
+
+    // =================================================================
+    // Learned tab: learning progress, suggestions per person, history
+    // =================================================================
+    let lnData = null;
+    const lnEsc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g,
+        (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const lnName = (p) => ((lnData && lnData.people[p]) || {}).name
+        || String(p || "someone").split("_")[0].replace(/^./, (c) => c.toUpperCase());
+    const lnSpeaker = (eid) => String(eid || "").replace(/^media_player\./, "").replace(/_speaker$/, "").replace(/_/g, " ");
+    const LN_MODE = { ask: "Asks", auto: "Automatic", never: "Never" };
+    const LN_ANSWER = {
+        asked: "was asked", yes: "said yes", no: "said no", never: "said don't ask again",
+        undo: "undid it", auto: "it ran automatically", expired: "no answer",
+        set_forget: "forgot it (Learned tab)", set_allow: "allowed asking again (Learned tab)",
+        set_stop_auto: "stopped automatic (Learned tab)", set_never: "turned it off (Learned tab)",
+    };
+
+    async function loadLearned() {
+        try {
+            const res = await bpsFetch("/api/bps/learned");
+            if (!res.ok) throw new Error(res.status);
+            lnData = await res.json();
+        } catch (e) {
+            document.getElementById("lnHistory").innerHTML =
+                '<p class="bps-links-hint">Could not load what BPS has learned. Try again in a moment.</p>';
+            return;
+        }
+        renderLearned();
+    }
+
+    const T = (text, ...args) => (window.bpsT ? window.bpsT(text, ...args)
+        : (args.length ? text.replace(/\{\}/g, () => String(args.shift())) : text));
+
+    function renderLearned() {
+        const d = lnData;
+        const L = d.learning;
+        const pct = Math.min(100, Math.round(100 * L.days / L.target));
+        const left = L.target - L.days;
+        document.getElementById("lnProgress").innerHTML = !d.history_enabled
+            ? `<p class="bps-links-hint">${lnEsc(T("History is turned off (Settings → Features), so BPS is not learning."))}</p>`
+            : `<div><b>${lnEsc(L.ready ? T("Ready") : T("Learning: {} of {} days", L.days, L.target))}</b></div>
+               <div class="bps-ln-bar"><span style="width:${pct}%"></span></div>
+               <p class="bps-links-hint">${lnEsc(L.ready
+                   ? T("{} days with data in the last 60 days. Enough to find routines.", L.days)
+                   : T(left === 1 ? "{} more day with someone at home before BPS suggests routines on its own."
+                       : "{} more days with someone at home before BPS suggests routines on its own.", left))}
+               ${L.first_day ? lnEsc(T("Data since {}.", L.first_day)) : ""}</p>`;
+
+        const sBox = document.getElementById("lnSuggestions");
+        if (!d.suggestions.length) {
+            sBox.innerHTML = `<p class="bps-links-hint">${lnEsc(T("No suggestions yet."))}${d.features.suggestions ? ""
+                : " " + lnEsc(T("Suggestions are turned off in Settings → Features."))}</p>`;
+        } else {
+            sBox.innerHTML = d.suggestions.map((sg) => {
+                const rows = sg.people.map((r) => {
+                    const btns = [];
+                    if (r.mode === "auto") btns.push(["stop_auto", T("Ask instead")]);
+                    if (r.mode === "never") btns.push(["allow", T("Allow again")]);
+                    if (r.mode !== "never") btns.push(["never", T("Never")]);
+                    btns.push(["forget", T("Forget")]);
+                    let stats = T("{} yes · {} no", r.yes, r.no);
+                    if (r.mode === "ask" && r.streak) stats += " · " + T("{} of 3 yes in a row", r.streak);
+                    if (r.last_asked) stats += " · " + T("last asked {}", r.last_asked.replace("T", " ").slice(0, 16));
+                    return `<div class="bps-ln-row">
+                        <span class="bps-ln-who">${lnEsc(lnName(r.person))}${r.unknown ? ` <span class="bps-links-hint">${lnEsc(T("(when someone unidentified is in the room)"))}</span>` : ""}</span>
+                        <span class="bps-ln-mode ${lnEsc(r.mode)}">${lnEsc(T(LN_MODE[r.mode] || r.mode))}</span>
+                        <span class="bps-ln-stats">${lnEsc(stats)}</span>
+                        ${btns.map(([a, label]) => `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-action="${a}" data-ln-person="${lnEsc(r.person)}" data-ln-key="${lnEsc(r.key)}">${lnEsc(label)}</button>`).join("")}
+                    </div>`;
+                }).join("");
+                return `<div class="bps-ln-sugg" data-ln-sid="${lnEsc(sg.id)}">
+                    <div class="bps-ln-sugg-head"><b>${lnEsc(sg.title)}</b>${sg.zone ? `<span class="bps-links-tag">${lnEsc(sg.zone)}</span>` : ""}
+                    ${(sg.texts_edited || []).length ? `<span class="bps-links-tag">${lnEsc(T("text changed here"))}</span>` : ""}
+                    ${sg.texts && lnData.can_configure ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm bps-ln-edit-btn" data-ln-texts="1">${lnEsc(T("Edit text"))}</button>` : ""}
+                    ${sg.message ? `<span class="bps-links-hint">${lnEsc(sg.message)}</span>` : ""}</div>
+                    <div class="bps-ln-textform" hidden></div>
+                    ${lnWhatHtml(sg)}
+                    ${rows || `<p class="bps-links-hint">${lnEsc(T("Nobody has been asked yet."))}</p>`}
+                </div>`;
+            }).join("");
+        }
+
+        const sel = document.getElementById("lnPerson");
+        const ppl = Object.keys(d.people);
+        sel.hidden = !(d.is_admin && ppl.length > 1);
+        if (!sel.hidden && sel.options.length !== ppl.length + 1) {
+            sel.innerHTML = `<option value="">${lnEsc(T("Everyone"))}</option>`
+                + ppl.map((p) => `<option value="${lnEsc(p)}">${lnEsc(lnName(p))}</option>`).join("");
+        }
+        renderLearnedHistory();
+    }
+
+    // ---- What a suggestion does: base changes (zone lights) + own extras ----
+    const lnDo = (d) => {
+        if (!d) return "";
+        if (d.run) return T("runs");
+        if (d.media) return d.media === "volume" ? T("volume {} %", d.volume) : T(d.media === "mute" ? "muted" : "paused");
+        if (d.state === "off") return T("off");
+        const parts = [];
+        if (d.brightness_pct != null) parts.push(d.brightness_pct + " %");
+        if (d.color_temp_kelvin != null) parts.push(d.color_temp_kelvin + " K");
+        if (d.rgb_color) parts.push(T("colour"));
+        return parts.join(" ") || T("on");
+    };
+    const lnPctOf = (d) => (d && d.state === "off" ? 0 : (d && d.brightness_pct != null ? d.brightness_pct : 100));
+    const lnPeopleAll = () => (lnData && (lnData.all_people || lnData.people)) || {};
+
+    function lnWhatHtml(sg) {
+        if (!sg.base) return "";
+        const conf = lnData.can_configure;
+        const base = sg.base.map((b) => {
+            const level = conf
+                ? `<input type="number" min="0" max="100" step="5" class="bps-ln-level" value="${lnPctOf(b.do)}" data-ln-override="${lnEsc(b.entity)}"${b.skip ? " disabled" : ""}> %`
+                : `<span>${lnEsc(lnDo(b.do))}</span>`;
+            const tags = (!b.linked ? `<span class="bps-links-tag bps-ln-warn">${lnEsc(T("not linked to the zone, skipped"))}</span>` : "")
+                + (b.overridden ? `<span class="bps-links-tag">${lnEsc(T("changed from {}", lnDo(b.default)))}</span>` : "");
+            const ctl = conf
+                ? `<label class="bps-ln-skip"><input type="checkbox" data-ln-skip="${lnEsc(b.entity)}"${b.skip ? "" : " checked"}> ${lnEsc(T("Include"))}</label>`
+                  + (b.overridden ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-reset="${lnEsc(b.entity)}">${lnEsc(T("Reset"))}</button>` : "")
+                : "";
+            return `<div class="bps-ln-change${b.skip ? " bps-ln-skipped" : ""}"><span class="bps-ln-ent" title="${lnEsc(b.entity)}">💡 ${lnEsc(b.name)}</span>${level}${tags}${ctl}</div>`;
+        }).join("");
+        const ppl = lnPeopleAll();
+        const extras = (sg.extras || []).map((x) => {
+            const name = x.entity === "all_speakers" ? T("All speakers (whole house)") : x.name;
+            const icon = x.do.run ? "▶️" : (x.do.media ? "🔈" : "💡");
+            const where = x.zone && x.zone !== sg.zone ? `<span class="bps-links-tag">${lnEsc(x.zone)}</span>` : "";
+            const noUndo = x.do.run ? `<span class="bps-links-tag">${lnEsc(T("Undo doesn't restore this"))}</span>` : "";
+            const boxes = Object.keys(ppl).map((p) => {
+                const mayTick = conf || p === lnData.me;
+                return `<label class="bps-ln-person"><input type="checkbox" data-ln-xperson="${lnEsc(p)}" data-ln-xid="${lnEsc(x.id)}"${x.people.includes(p) ? " checked" : ""}${mayTick ? "" : " disabled"}> ${lnEsc(lnName(p))}</label>`;
+            }).join("");
+            const mine = conf || (x.people.length === 1 && x.people[0] === lnData.me);
+            return `<div class="bps-ln-change bps-ln-extra"><span class="bps-ln-ent" title="${lnEsc(x.entity)}">${icon} ${lnEsc(name)}</span><span>${lnEsc(lnDo(x.do))}</span>${where}${noUndo}
+                <span class="bps-ln-people"><span class="bps-links-hint">${lnEsc(T("Applies to:"))}</span>${boxes}</span>
+                ${mine ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-xdel="${lnEsc(x.id)}">${lnEsc(T("Remove"))}</button>` : ""}</div>`;
+        }).join("");
+        return `<div class="bps-ln-what">
+            <div class="bps-ln-what-head">${lnEsc(T("What happens on yes"))} <span class="bps-links-hint">${lnEsc(T("Only lights linked to {} (Zone links → Lights).", sg.zone))}</span></div>
+            ${base || `<p class="bps-links-hint">${lnEsc(T("No lights."))}</p>`}
+            <div class="bps-ln-what-head">${lnEsc(T("Own extras"))} <span class="bps-links-hint">${lnEsc(T("Run only when a ticked person says yes (or it runs automatically for them)."))}</span></div>
+            ${extras || `<p class="bps-links-hint">${lnEsc(T("None yet."))}</p>`}
+            ${lnData.me || conf ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-xadd="1">${lnEsc(T("+ Add extra"))}</button>` : ""}
+            <div class="bps-ln-xform" hidden></div>
+        </div>`;
+    }
+
+    function lnExtraForm(box) {
+        const c = lnData.choices || { lights: [], speakers: [], run: [] };
+        const conf = lnData.can_configure;
+        const ppl = lnPeopleAll();
+        const opt = (list) => list.map((e) => `<option value="${lnEsc(e.entity_id)}">${lnEsc(e.name)}${e.zone ? " · " + lnEsc(e.zone) : ""}</option>`).join("");
+        box.innerHTML = `
+            <select class="bps-modal-input" data-xf="kind">
+                <option value="light">${lnEsc(T("Light"))}</option>
+                <option value="media">${lnEsc(T("Speaker"))}</option>
+                <option value="run">${lnEsc(T("Script, scene or automation"))}</option>
+            </select>
+            <select class="bps-modal-input" data-xf="entity"></select>
+            <span data-xf="value"></span>
+            <span class="bps-ln-people">${Object.keys(ppl).map((p) => {
+                const mayTick = conf || p === lnData.me;
+                return `<label class="bps-ln-person"><input type="checkbox" data-xf-person="${lnEsc(p)}"${p === lnData.me ? " checked" : ""}${mayTick ? "" : " disabled"}> ${lnEsc(lnName(p))}</label>`;
+            }).join("")}</span>
+            <button type="button" class="bps-btn bps-btn-primary bps-btn-sm" data-xf="save">${lnEsc(T("Add"))}</button>
+            <button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-xf="cancel">${lnEsc(T("Cancel"))}</button>`;
+        const kind = box.querySelector('[data-xf="kind"]');
+        const ent = box.querySelector('[data-xf="entity"]');
+        const val = box.querySelector('[data-xf="value"]');
+        const fill = () => {
+            if (kind.value === "light") {
+                ent.innerHTML = opt(c.lights);
+                val.innerHTML = `<input type="number" min="0" max="100" step="5" value="20" class="bps-ln-level" data-xf="pct"> % <span class="bps-links-hint">${lnEsc(T("0 = off"))}</span>`;
+            } else if (kind.value === "media") {
+                ent.innerHTML = (c.all_speakers ? `<option value="all_speakers">${lnEsc(T("All speakers (whole house)"))}</option>` : "") + opt(c.speakers);
+                val.innerHTML = `<select class="bps-modal-input" data-xf="media">
+                    <option value="mute">${lnEsc(T("Mute"))}</option><option value="pause">${lnEsc(T("Pause"))}</option>
+                    <option value="volume">${lnEsc(T("Volume"))}</option></select>
+                    <input type="number" min="0" max="100" step="5" value="15" class="bps-ln-level" data-xf="vol" hidden>`;
+                const m = val.querySelector('[data-xf="media"]');
+                m.addEventListener("change", () => { val.querySelector('[data-xf="vol"]').hidden = m.value !== "volume"; });
+            } else {
+                ent.innerHTML = opt(c.run);
+                val.innerHTML = `<span class="bps-links-hint">${lnEsc(T("BPS starts it when you say yes. Undo only restores lights and speakers, not what this changes."))}</span>`;
+            }
+        };
+        kind.addEventListener("change", fill);
+        fill();
+        box.hidden = false;
+        return () => {
+            let doV = true;
+            if (kind.value === "light") {
+                const pct = Number(val.querySelector('[data-xf="pct"]').value);
+                doV = pct > 0 ? { brightness_pct: pct } : "off";
+            } else if (kind.value === "media") {
+                const m = val.querySelector('[data-xf="media"]').value;
+                doV = m === "volume" ? { media: "volume", volume: Number(val.querySelector('[data-xf="vol"]').value) } : m;
+            }
+            const people = Array.from(box.querySelectorAll("[data-xf-person]:checked")).map((i) => i.dataset.xfPerson);
+            return { entity: ent.value, do: doV, people };
+        };
+    }
+
+    const LN_TEXT_FIELDS = [
+        ["title", "Title"], ["message", "Question"],
+        ["done_message", "Text when it ran automatically"],
+        ["unknown_message", "Question when only someone unidentified is in the room"],
+    ];
+    function lnTextForm(box, sg) {
+        const auto = sg.texts_from_automation || {};
+        box.innerHTML = LN_TEXT_FIELDS.map(([k, label]) => `<label class="bps-ln-tf">
+                <span>${lnEsc(T(label))}</span>
+                <input type="text" class="bps-modal-input" data-tf="${k}" value="${lnEsc(sg.texts[k] || "")}" maxlength="500">
+                ${auto[k] && auto[k] !== sg.texts[k] ? `<span class="bps-links-hint">${lnEsc(T("From the automation: {}", auto[k]))}</span>` : ""}
+            </label>`).join("")
+            + `<p class="bps-links-hint">${lnEsc(T("Text changed here wins over the automation's. Leave a field empty to use the automation's text."))}</p>
+            <div class="bps-ln-tf-actions">
+                <button type="button" class="bps-btn bps-btn-primary bps-btn-sm" data-tf-act="save">${lnEsc(T("Save"))}</button>
+                ${(sg.texts_edited || []).length ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-tf-act="reset">${lnEsc(T("Use the automation's text"))}</button>` : ""}
+                <button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-tf-act="cancel">${lnEsc(T("Cancel"))}</button>
+            </div>`;
+        box.hidden = false;
+    }
+
+    async function lnEdit(body) {
+        try {
+            const res = await bpsFetch("/api/bps/learned", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            bpsToast(T("Saved."));
+        } catch (err) {
+            bpsToast(T("Not saved: {}", err.message));
+        }
+        loadLearned();
+    }
+
+    const lnSugg = (el) => (lnData.suggestions || []).find((g) => g.id === el.closest("[data-ln-sid]").dataset.lnSid);
+    document.getElementById("lnSuggestions").addEventListener("change", (e) => {
+        const t = e.target;
+        const card = t.closest("[data-ln-sid]");
+        if (!card) return;
+        const id = card.dataset.lnSid;
+        if (t.dataset.lnOverride) {
+            const pct = Number(t.value);
+            lnEdit({ op: "override", id, entity: t.dataset.lnOverride, value: pct > 0 ? pct : "off" });
+        } else if (t.dataset.lnSkip) {
+            lnEdit({ op: "override", id, entity: t.dataset.lnSkip, value: t.checked ? null : "skip" });
+        } else if (t.dataset.lnXperson) {
+            const x = (lnSugg(t).extras || []).find((v) => v.id === t.dataset.lnXid);
+            if (!x) return;
+            const people = new Set(x.people);
+            if (t.checked) people.add(t.dataset.lnXperson); else people.delete(t.dataset.lnXperson);
+            if (!people.size) {
+                bpsToast(T("At least one person must be ticked. Use Remove to delete it."));
+                t.checked = true;
+                return;
+            }
+            lnEdit({ op: "extra_update", id, extra_id: x.id, extra: { id: x.id, entity: x.entity, do: x.do, people: [...people] } });
+        }
+    });
+    let lnCollect = null;
+    document.getElementById("lnSuggestions").addEventListener("click", (e) => {
+        const t = e.target.closest("button");
+        const card = t && t.closest("[data-ln-sid]");
+        if (!card) return;
+        const id = card.dataset.lnSid;
+        if (t.dataset.lnTexts) lnTextForm(card.querySelector(".bps-ln-textform"), lnSugg(t));
+        else if (t.dataset.tfAct === "cancel") card.querySelector(".bps-ln-textform").hidden = true;
+        else if (t.dataset.tfAct === "save" || t.dataset.tfAct === "reset") {
+            const texts = {};
+            const sg = lnSugg(t);
+            card.querySelectorAll("[data-tf]").forEach((i) => {
+                const v = t.dataset.tfAct === "reset" ? "" : i.value.trim();
+                // a field equal to the automation's own text is not an edit
+                texts[i.dataset.tf] = v === ((sg.texts_from_automation || {})[i.dataset.tf] || "") ? "" : v;
+            });
+            lnEdit({ op: "texts", id, texts });
+        } else if (t.dataset.lnReset) lnEdit({ op: "override", id, entity: t.dataset.lnReset, value: null });
+        else if (t.dataset.lnXdel) lnEdit({ op: "extra_delete", id, extra_id: t.dataset.lnXdel });
+        else if (t.dataset.lnXadd) lnCollect = lnExtraForm(card.querySelector(".bps-ln-xform"));
+        else if (t.dataset.xf === "cancel") card.querySelector(".bps-ln-xform").hidden = true;
+        else if (t.dataset.xf === "save" && lnCollect) lnEdit({ op: "extra_add", id, extra: lnCollect() });
+    });
+
+    const LN_REASON = { left_home: "left home", feature_off: "feature off", manual: "manual",
+                        notification: "notification", paused: "paused", removed: "removed" };
+
+    function lnDescribe(h) {
+        const who = `<b>${lnEsc(lnName(h.person))}</b>`;
+        if (h.type === "follow") {
+            const sp = lnSpeaker(h.speaker);
+            const reason = h.reason ? T(LN_REASON[h.reason] || String(h.reason).replace(/_/g, " ")) : "";
+            const text = {
+                started: sp ? T(": follow me started ({})", sp) : T(": follow me started"),
+                joined: T(": music followed into {}", h.zone || sp),
+                left: T(": music left {}", sp),
+                stopped: reason ? T(": follow me stopped ({})", reason) : T(": follow me stopped"),
+            }[h.event] || T(": follow me {}", h.event);
+            return who + lnEsc(text);
+        }
+        const what = h.id === "follow_me"
+            ? (h.speaker ? T("Follow me? ({})", lnSpeaker(h.speaker)) : T("Follow me?"))
+            : h.title;
+        const unknown = h.unknown ? ` <span class="bps-links-hint">${lnEsc(T("(someone unidentified was in the room)"))}</span>` : "";
+        if (h.answer === "asked") return `${who} ${lnEsc(T("was asked"))} <i>${lnEsc(what)}</i>${unknown}`;
+        let ans = T(LN_ANSWER[h.answer] || String(h.answer));
+        if (h.via === "dashboard") ans += " " + T("on the dashboard");
+        if (h.answer === "expired" && h.reason) ans += " " + T(h.reason === "timeout" ? "(30 min passed)" : "(the moment passed)");
+        return `${who} · <i>${lnEsc(what)}</i> — ${lnEsc(ans)}${unknown}`;
+    }
+
+    function renderLearnedHistory() {
+        const box = document.getElementById("lnHistory");
+        const only = document.getElementById("lnPerson").value;
+        const items = lnData.history.filter((h) => !only || h.person === only);
+        if (!items.length) {
+            box.innerHTML = '<p class="bps-links-hint">Nothing yet. Questions, answers and follow-me sessions show up here.</p>';
+            return;
+        }
+        let day = null;
+        const today = new Date().toISOString().slice(0, 10);
+        box.innerHTML = items.map((h) => {
+            const d = String(h.t || "").slice(0, 10);
+            let head = "";
+            if (d !== day) {
+                day = d;
+                const label = d === today ? T("Today")
+                    : new Date(d + "T12:00:00").toLocaleDateString(
+                        (window.bpsI18n && window.bpsI18n.language) || undefined, { weekday: "long", day: "numeric", month: "short" });
+                head = `<div class="bps-ln-day">${lnEsc(label)}</div>`;
+            }
+            return `${head}<div class="bps-ln-item"><time>${lnEsc(String(h.t || "").slice(11, 16))}</time><span>${lnDescribe(h)}</span></div>`;
+        }).join("");
+    }
+
+    document.getElementById("lnPerson").addEventListener("change", renderLearnedHistory);
+    document.getElementById("lnSuggestions").addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-ln-action]");
+        if (!btn) return;
+        btn.disabled = true;
+        try {
+            const res = await bpsFetch("/api/bps/learned", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ person: btn.dataset.lnPerson, key: btn.dataset.lnKey, action: btn.dataset.lnAction }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            bpsToast("Saved.");
+        } catch (err) {
+            bpsToast("Not saved: " + err.message);
+        }
+        loadLearned();
+    });
+
+    // Access: users without configure access get the restricted view only
+    // (the server enforces it; this just avoids a panel full of 403s).
+    async function applyAccess() {
+        try {
+            const res = await bpsFetch("/api/bps/access");
+            if (!res.ok) return;
+            bpsAccess = await res.json();
+        } catch (e) {
+            return;
+        }
+        if (bpsAccess.can_configure) return;
+        // Everyone else: only the Learned tab, with their own data.
+        tabButtons.forEach((b) => {
+            const mine = b.dataset.tab === "learned";
+            b.hidden = !mine;
+            b.classList.toggle("active", mine);
+        });
+        tabPanels.forEach((pnl) => pnl.classList.toggle("active", pnl.dataset.tabpanel === "learned"));
+        document.getElementById("lnRestricted").hidden = false;
+        scheduleSidebarSync();
+        loadLearned();
+    }
+    applyAccess();
 
     // Cap the Zones & Receivers sidebar at the bottom of the viewport so a long
     // receiver list scrolls inside it instead of running off-screen. In the

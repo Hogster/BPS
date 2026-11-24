@@ -1,0 +1,93 @@
+suggestion_answer:
+  fields:
+    answer:
+      required: true
+      example: "yes"
+      selector:
+        select:
+          options:
+            - "yes"
+            - "no"
+            - "never"
+            - "undo"
+    person:
+      required: false
+      example: "person.erik"
+      selector:
+        entity:
+          domain: person
+
+follow_me_start:
+  fields:
+    person:
+      required: false
+      example: "person.erik"
+      selector:
+        entity:
+          domain: person
+
+follow_me_stop:
+  fields:
+    person:
+      required: false
+      example: "person.erik"
+      selector:
+        entity:
+          domain: person
+
+suggest:
+  fields:
+    id:
+      required: true
+      example: tv_cozy
+      selector:
+        text:
+    zone:
+      required: true
+      example: Livingroom
+      selector:
+        text:
+    title:
+      required: true
+      example: "📺 Cozy?"
+      selector:
+        text:
+    message:
+      required: true
+      example: Dim the lights for the TV?
+      selector:
+        text:
+    changes:
+      required: true
+      example: '{"light.livingroom_ceiling": 30, "light.livingroom_spots": "off"}'
+      selector:
+        object:
+    done_message:
+      required: false
+      selector:
+        text:
+    unknown_message:
+      required: false
+      selector:
+        text:
+    once_per:
+      required: false
+      default: evening
+      selector:
+        select:
+          options: [evening, day, hour, none]
+
+suggestion_clear:
+  fields:
+    id:
+      required: true
+      example: tv_cozy
+      selector:
+        text:
+
+suggestion_reask:
+  fields:
+    id:
+      required: false
+      selector:
+        text:

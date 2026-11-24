@@ -1,6 +1,7 @@
 import aiofiles
 import aiofiles.os
 import time
+from datetime import timedelta
 from pathlib import Path
 from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
@@ -38,6 +39,7 @@ from .calibration import (
     async_restore_calibration_state,
     async_shutdown_calibration,
     async_start_auto_if_enabled,
+    get_calibration_state,
     refresh_receivers_from_coords,
 )
 from .storage import (
@@ -46,8 +48,20 @@ from .storage import (
     load_bps_data,
     migrate_legacy,
     save_bps_data,
+    get_settings_raw, load_settings, save_settings,
 )
 from .zone_adjust import adjust_zones, adjust_subzones
+from .zone_links import build_zone_links, collect_candidates
+from .placement import analyze as analyze_placement
+from .usage import async_setup_usage
+from .engine import async_setup_engine, register_services
+from .learned import apply_pref_action, build_learned, scan_log
+from . import plan as sugg_plan
+from .access import can_configure, denied, user_access
+from .persons import (
+    PersonTracker, merge_settings, validate_settings, guess_kind, guess_charging,
+    suggest_trackers, KINDS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1493,6 +1507,10 @@ def find_sub_zone_for_point(data, entity, floor_name, point):
     return "unknown", None
 
 
+def _register_services(hass):
+    register_services(hass, DOMAIN)
+
+
 async def async_setup(hass, config):
     """Set up the BPS integration."""
     _LOGGER.info("BPS integration initierad.")
@@ -1502,6 +1520,8 @@ async def async_setup(hass, config):
         return True  # Abort if already running
 
     hass.data["bps_initialized"] = True  # Set flag
+
+    _register_services(hass)
 
     async def initialize_bps():
         """Initialize the BPS component"""
@@ -1519,6 +1539,11 @@ async def async_setup(hass, config):
             hass.http.register_view(BPSScannerLinkingAPI())
             hass.http.register_view(BPSCordsAPI(hass))
             hass.http.register_view(BPSCalibrationAPI())
+            hass.http.register_view(BPSZoneLinksAPI())
+            hass.http.register_view(BPSSettingsAPI())
+            hass.http.register_view(BPSPlacementAPI())
+            hass.http.register_view(BPSAccessAPI())
+            hass.http.register_view(BPSLearnedAPI())
             hass.data["bps_views_registered"] = True
 
         config_path = hass.config.path()
@@ -1579,6 +1604,33 @@ async def async_setup(hass, config):
         # a crash can no longer leave a 0-byte layout (issue #104).
         await migrate_legacy(hass)
         await load_bps_data(hass)
+        await load_settings(hass)
+
+        # People: tracker priority -> sensor.bps_person_<id>_zone
+        old_persons = hass.data.get(DOMAIN, {}).get("persons")
+        if old_persons:
+            old_persons.stop()
+        persons = PersonTracker(hass, lambda: merge_settings(get_settings_raw(hass)), DOMAIN)
+        hass.data.setdefault(DOMAIN, {})["persons"] = persons
+        persons.start()
+
+        # Zone usage statistics (weights for the placement advisor)
+        old_usage_stop = hass.data.get(DOMAIN, {}).pop("usage_stop", None)
+        if old_usage_stop:
+            await old_usage_stop()
+        try:
+            hass.data.setdefault(DOMAIN, {})["usage_stop"] = await async_setup_usage(hass, DOMAIN)
+        except Exception as e:
+            _LOGGER.warning("Zone usage statistics disabled: %s", e)
+
+        # Home engine: event log, zone counts, follow me, suggestions
+        old_engine_stop = hass.data.get(DOMAIN, {}).pop("engine_stop", None)
+        if old_engine_stop:
+            await old_engine_stop()
+        try:
+            hass.data.setdefault(DOMAIN, {})["engine_stop"] = await async_setup_engine(hass, DOMAIN)
+        except Exception as e:
+            _LOGGER.exception("BPS home engine (follow me, suggestions) failed to start: %s", e)
 
         jinja_code = """
         {{
@@ -1601,6 +1653,15 @@ async def async_setup(hass, config):
             update_task = hass.data.pop("bps_update_task", None)
             if update_task:
                 update_task.cancel()
+            persons_rt = hass.data.get(DOMAIN, {}).get("persons")
+            if persons_rt:
+                persons_rt.stop()
+            usage_stop = hass.data.get(DOMAIN, {}).pop("usage_stop", None)
+            if usage_stop:
+                await usage_stop()
+            engine_stop = hass.data.get(DOMAIN, {}).pop("engine_stop", None)
+            if engine_stop:
+                await engine_stop()
             await async_shutdown_calibration(hass)
 
         hass.bus.async_listen_once("homeassistant_stop", handle_homeassistant_stop)
@@ -1663,6 +1724,15 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     update_task = hass.data.pop("bps_update_task", None)
     if update_task:
         update_task.cancel()
+    persons_rt = hass.data.get(DOMAIN, {}).pop("persons", None)
+    if persons_rt:
+        persons_rt.stop()
+    usage_stop = hass.data.get(DOMAIN, {}).pop("usage_stop", None)
+    if usage_stop:
+        await usage_stop()
+    engine_stop = hass.data.get(DOMAIN, {}).pop("engine_stop", None)
+    if engine_stop:
+        await engine_stop()
 
     await async_shutdown_calibration(hass)
 
@@ -1753,6 +1823,8 @@ class BPSSaveAPIText(HomeAssistantView):
 
     async def post(self, request):
         """Handle saving coordinates to a text file."""
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         data = await request.post()
 
@@ -1860,6 +1932,8 @@ class BPSAdjustZonesAPI(HomeAssistantView):
     requires_auth = True
 
     async def post(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         try:
             body = await request.json()
@@ -1962,6 +2036,8 @@ class BPSScannerLinkingAPI(HomeAssistantView):
     requires_auth = True
 
     async def get(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         # No placements to compare against is fine; still report the sensors.
         layout = get_bps_data(hass)
@@ -1977,6 +2053,359 @@ class BPSScannerLinkingAPI(HomeAssistantView):
             _LOGGER.error(f"beacon_links failed: {e}")
             data["beacons"] = []
         return web.json_response(data)
+
+
+class BPSZoneLinksAPI(HomeAssistantView):
+    """Per-zone links (HA area, media players, presence sensors) + suggestions.
+
+    Read-only: the links themselves are saved with the layout (Save Floor
+    Plan), so this only gathers the HA registries for the panel's dialog.
+    """
+    url = "/api/bps/zone_links"
+    name = "api:bps:zone_links"
+    requires_auth = True
+
+    async def get(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
+        hass = request.app["hass"]
+        try:
+            areas, candidates = collect_candidates(hass)
+            data = build_zone_links(get_bps_data(hass), areas, candidates)
+        except Exception as e:
+            _LOGGER.error(f"zone_links failed: {e}")
+            return web.Response(status=500, text="Failed to collect zone links")
+        return web.json_response(data)
+
+
+PLACEMENT_HISTORY_DAYS = 14
+
+
+async def _zone_histories(hass, days=PLACEMENT_HISTORY_DAYS):
+    """{entity_id: [(ts, zone), ...]} for every BPS tracker zone sensor.
+
+    Empty when the recorder isn't running; the analysis then weighs all zones
+    equally.
+    """
+    entity_ids = [s.entity_id for s in hass.states.async_all("sensor")
+                  if s.entity_id.endswith("_bps_zone")]
+    if not entity_ids:
+        return {}
+    try:
+        from homeassistant.components.recorder import get_instance, history
+        from homeassistant.util import dt as dt_util
+    except ImportError:
+        return {}
+    if "recorder" not in hass.config.components:
+        return {}
+    flt = getattr(get_instance(hass), "entity_filter", None)
+    if callable(flt):  # many installs exclude the BPS sensors from the recorder
+        entity_ids = [e for e in entity_ids if flt(e)]
+    if not entity_ids:
+        return {}
+    end = dt_util.utcnow()
+    start = end - timedelta(days=days)
+
+    def _read():
+        states = history.get_significant_states(
+            hass, start, end, entity_ids=entity_ids, include_start_time_state=True,
+            significant_changes_only=False, minimal_response=False, no_attributes=True)
+        return {eid: [(st.last_changed.timestamp(), st.state) for st in rows]
+                for eid, rows in states.items()}
+
+    try:
+        return await get_instance(hass).async_add_executor_job(_read)
+    except Exception as e:  # recorder busy / schema change: degrade gracefully
+        _LOGGER.warning("placement: could not read zone history: %s", e)
+        return {}
+
+
+def _map_urls(hass):
+    """floor name -> /local URL of its floor image."""
+    out = {}
+    path = Path(hass.config.path("www/bps_maps"))
+    try:
+        for f in path.iterdir():
+            if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"):
+                out.setdefault(f.stem, f"/local/bps_maps/{f.name}")
+    except OSError:
+        pass
+    return out
+
+
+class BPSPlacementAPI(HomeAssistantView):
+    """Receiver placement advisor: error heat map + best spots for a new receiver.
+
+    Read-only analysis of the saved layout, the receiver-to-receiver
+    calibration and the recorder history of the tracker zone sensors.
+    """
+    url = "/api/bps/placement"
+    name = "api:bps:placement"
+    requires_auth = True
+
+    async def get(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
+        hass = request.app["hass"]
+        try:
+            layout = get_bps_data(hass)
+            cal = get_calibration_state(hass)
+            calib = {"results": dict(cal.get("results") or {}),
+                     "samples": {k: list(v) for k, v in (cal.get("samples") or {}).items()}}
+            t0 = time.monotonic()
+            histories = await _zone_histories(hass)
+            t1 = time.monotonic()
+            maps = await hass.async_add_executor_job(_map_urls, hass)
+            own = hass.data.get(DOMAIN, {}).get("usage")
+            report = await hass.async_add_executor_job(
+                analyze_placement, copy.deepcopy(layout), calib, histories, time.time(),
+                own.summary() if own else None)
+            report["timing_s"] = {"history": round(t1 - t0, 2), "analysis": round(time.monotonic() - t1, 2)}
+            for fl in report["floors"]:
+                fl["image"] = maps.get(fl["name"])
+            report["history_days"] = PLACEMENT_HISTORY_DAYS
+        except Exception as e:
+            _LOGGER.exception("placement analysis failed: %s", e)
+            return web.Response(status=500, text="Placement analysis failed")
+        return web.json_response(report)
+
+
+class BPSSettingsAPI(HomeAssistantView):
+    """Settings tab: feature switches, notification tap target, persons.
+
+    GET returns the settings, the choices the panel needs (people, BPS
+    trackers, charging sensors, notify services) with suggestions, and the
+    live tracker choice per person. POST replaces the settings. Both need
+    configure access (admin, or any user when access.all_users is on); only
+    an admin may change access itself.
+    """
+    url = "/api/bps/settings"
+    name = "api:bps:settings"
+    requires_auth = True
+
+    async def get(self, request):
+        hass = request.app["hass"]
+        if not can_configure(hass, request):
+            return denied()
+        try:
+            return web.json_response(_settings_payload(hass))
+        except Exception as e:
+            _LOGGER.error(f"settings read failed: {e}")
+            return web.Response(status=500, text="Failed to read settings")
+
+    async def post(self, request):
+        hass = request.app["hass"]
+        is_admin, allowed = user_access(hass, request)
+        if not allowed:
+            return denied()
+        try:
+            data = validate_settings(await request.json())
+        except (ValueError, TypeError) as e:
+            return web.Response(status=400, text=str(e))
+        if not is_admin:
+            # Only an administrator decides who may configure BPS.
+            data["access"] = merge_settings(get_settings_raw(hass))["access"]
+        await save_settings(hass, data)
+        return web.json_response(_settings_payload(hass))
+
+
+class BPSAccessAPI(HomeAssistantView):
+    """What the current user may do in the panel (drives the restricted view)."""
+    url = "/api/bps/access"
+    name = "api:bps:access"
+    requires_auth = True
+
+    async def get(self, request):
+        is_admin, allowed = user_access(request.app["hass"], request)
+        user = request.get("hass_user")
+        return web.json_response({
+            "is_admin": is_admin,
+            "can_configure": allowed,
+            "user_id": user.id if user else None,
+            "name": user.name if user else None,
+        })
+
+
+class BPSLearnedAPI(HomeAssistantView):
+    """Learned tab: history, suggestion status per person, learning progress.
+
+    Every signed-in user may open it; non-admins only get (and may only
+    change) their own person's data.
+    """
+    url = "/api/bps/learned"
+    name = "api:bps:learned"
+    requires_auth = True
+
+    @staticmethod
+    def _viewer(hass, request):
+        user = request.get("hass_user")
+        home = hass.data.get(DOMAIN, {}).get("home")
+        me = home.person_for_user(user.id) if (home and user) else None
+        return bool(user and user.is_admin), me, home
+
+    async def get(self, request):
+        hass = request.app["hass"]
+        is_admin, me, home = self._viewer(hass, request)
+        sugg = hass.data.get(DOMAIN, {}).get("suggestions")
+        log = hass.data.get(DOMAIN, {}).get("eventlog")
+        if home is None or sugg is None or log is None:
+            return web.Response(status=503, text="BPS is still starting")
+        await log.async_flush()
+        try:
+            days, recs = await hass.async_add_executor_job(scan_log, log.dir)
+        except Exception as e:
+            _LOGGER.error("learned: reading the event log failed: %s", e)
+            days, recs = [], []
+        people = home.people()
+        defs = {sid: sugg.effective(d) for sid, d in sugg.defs.items()}
+        payload = build_learned(days, recs, defs, sugg.prefs, people, me, is_admin)
+        configure = can_configure(hass, request)
+        payload["can_configure"] = configure
+        for sg in payload["suggestions"]:
+            d = sugg.defs.get(sg["id"])
+            if not d:
+                continue
+            extras = sugg_plan.visible_extras(sugg.extras.get(sg["id"]), me, configure)
+            sg.update(sugg_plan.learned_view(d, sugg.overrides.get(sg["id"]), extras,
+                                             home.lights(d["zone"]), sugg.name_of, home.zone_of_entity))
+            eff = defs[sg["id"]]
+            sg["texts"] = {k: eff.get(k, "") for k in ("title", "message", "done_message", "unknown_message")}
+            sg["texts_from_automation"] = {k: d.get(k, "") for k in sg["texts"]}
+            sg["texts_edited"] = sorted(sugg.texts.get(sg["id"], {}))
+        payload["all_people"] = {p: {"name": v.get("name", p)} for p, v in people.items()}
+        payload["choices"] = _extra_choices(hass, home)
+        payload["history_enabled"] = home.feature("history")
+        payload["features"] = {k: home.feature(k) for k in ("follow_me", "suggestions")}
+        return web.json_response(payload)
+
+    async def post(self, request):
+        hass = request.app["hass"]
+        is_admin, me, home = self._viewer(hass, request)
+        sugg = hass.data.get(DOMAIN, {}).get("suggestions")
+        if home is None or sugg is None:
+            return web.Response(status=503, text="BPS is still starting")
+        try:
+            body = await request.json()
+        except Exception:
+            return web.Response(status=400, text="JSON body required")
+        if body.get("op"):
+            return self._edit(hass, request, body, me, home, sugg)
+        try:
+            person, key, action = str(body["person"]), str(body["key"]), str(body["action"])
+        except Exception:
+            return web.Response(status=400, text="person, key and action are required")
+        if not is_admin and person != me:
+            return denied()
+        if person not in home.people():
+            return web.Response(status=400, text="Unknown person")
+        try:
+            apply_pref_action(sugg.prefs, person, key, action)
+        except ValueError as e:
+            return web.Response(status=400, text=str(e))
+        sugg._save()
+        home_log = hass.data.get(DOMAIN, {}).get("eventlog")
+        if home_log:
+            home_log.log("suggestion", kind=key, person=person, answer=f"set_{action}", via="learned_tab")
+        return web.json_response({"ok": True})
+
+    @staticmethod
+    def _edit(hass, request, body, me, home, sugg):
+        """Overrides (configurers) and extras (everyone, for themselves)."""
+        configure = can_configure(hass, request)
+        op, sid = str(body.get("op")), str(body.get("id") or "")
+        if sid not in sugg.defs:
+            return web.Response(status=400, text="Unknown suggestion")
+        try:
+            if op == "texts":
+                if not configure:
+                    return denied()
+                sugg.set_texts(sid, body.get("texts") or {})
+                sugg.publish()
+            elif op == "override":
+                if not configure:
+                    return denied()
+                entity = str(body.get("entity") or "")
+                if entity not in sugg.defs[sid]["changes"]:
+                    return web.Response(status=400, text="Not one of the suggestion's lights")
+                sugg_plan.set_override(sugg.overrides.setdefault(sid, {}), entity, body.get("value"))
+            elif op in ("extra_add", "extra_update", "extra_delete"):
+                extras = sugg.extras.setdefault(sid, [])
+                old = None
+                if op != "extra_add":
+                    xid = str(body.get("extra_id") or (body.get("extra") or {}).get("id") or "")
+                    old = next((e for e in extras if e["id"] == xid), None)
+                    if old is None:
+                        return web.Response(status=400, text="Unknown extra")
+                new = None if op == "extra_delete" else sugg_plan.make_extra(
+                    body.get("extra"), home.people(), old["id"] if old else None)
+                if not sugg_plan.may_change_extra(old, new, me, configure):
+                    return denied()
+                if old is not None:
+                    extras.remove(old)
+                if new is not None:
+                    extras.append(new)
+            else:
+                return web.Response(status=400, text="Unknown op")
+        except ValueError as e:
+            return web.Response(status=400, text=str(e))
+        sugg._save()
+        return web.json_response({"ok": True})
+
+
+def _extra_choices(hass, home):
+    """What an extra can change: lights, speakers, scripts/scenes/automations."""
+    def items(domain):
+        out = []
+        for st in hass.states.async_all(domain):
+            out.append({"entity_id": st.entity_id,
+                        "name": str(st.attributes.get("friendly_name") or "").strip() or st.entity_id,
+                        "zone": home.zone_of_entity(st.entity_id)})
+        return sorted(out, key=lambda c: c["name"].lower())
+    return {"lights": items("light"), "speakers": items("media_player"),
+            "run": items("script") + items("scene") + items("automation"),
+            "all_speakers": len(home.speakers())}
+
+
+def _settings_payload(hass):
+    settings = merge_settings(get_settings_raw(hass))
+    keys = sorted({
+        s.entity_id[len("sensor."):-len("_bps_zone")]
+        for s in hass.states.async_all("sensor")
+        if s.entity_id.endswith("_bps_zone") and not s.entity_id.startswith("sensor.bps_person_")
+    })
+    charging = sorted(
+        [s.entity_id for s in hass.states.async_all("sensor") if s.entity_id.endswith("_battery_state")]
+        + [s.entity_id for s in hass.states.async_all("binary_sensor")
+           if s.attributes.get("device_class") == "battery_charging"])
+    notify = sorted(k for k in hass.services.async_services().get("notify", {}) if k.startswith("mobile_app_"))
+    user_notify = {}
+    for entry in hass.config_entries.async_entries("mobile_app"):
+        uid, dev = entry.data.get("user_id"), entry.data.get("device_name")
+        if uid and dev and f"mobile_app_{slugify(dev)}" in notify:
+            user_notify.setdefault(uid, []).append(f"mobile_app_{slugify(dev)}")
+    people = []
+    for st in sorted(hass.states.async_all("person"), key=lambda s: s.entity_id):
+        name = st.attributes.get("friendly_name") or st.entity_id
+        people.append({
+            "entity_id": st.entity_id,
+            "name": name,
+            "state": st.state,
+            "user_id": st.attributes.get("user_id"),
+            "notify_suggested": (user_notify.get(st.attributes.get("user_id")) or [None])[0],
+            "trackers_suggested": suggest_trackers(name, st.attributes.get("device_trackers") or [], keys),
+        })
+    runtime = hass.data.get(DOMAIN, {}).get("persons")
+    return {
+        "settings": settings,
+        "choices": {
+            "people": people,
+            "trackers": [{"key": k, "kind": guess_kind(k), "charging": guess_charging(k, charging)} for k in keys],
+            "charging": charging,
+            "notify": notify,
+            "kinds": list(KINDS),
+        },
+        "status": dict(runtime.status) if runtime else {},
+    }
 
 
 class BPSMapsListAPI(HomeAssistantView):
@@ -2049,6 +2478,8 @@ class BPSUploadTrackerIconAPI(HomeAssistantView):
     requires_auth = True
 
     async def post(self, request):
+        if not can_configure(request.app["hass"], request):
+            return denied()
         hass = request.app["hass"]
         data = await request.post()
         icon_file = data.get("icon")

@@ -1,0 +1,117 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "BLE Positioning System",
+        "description": "Installera BPS. Planritningar, zoner och mottagare ställs in i BPS-panelen i sidomenyn."
+      }
+    },
+    "abort": {
+      "already_configured": "BPS är redan installerat."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "BPS-alternativ",
+        "data": {
+          "show_sidebar_panel": "Visa BPS-panelen i sidomenyn"
+        }
+      }
+    }
+  },
+  "services": {
+    "suggestion_answer": {
+      "name": "Svara på förslag",
+      "description": "Svara på det öppna BPS-förslaget (sensor.bps_suggestion). Personen är den som anropar, t.ex. genom att trycka på en knapp på dashboarden.",
+      "fields": {
+        "answer": {
+          "name": "Svar",
+          "description": "yes kör det, no hoppar över det den här gången, never slutar fråga, undo ångrar den senaste automatiska körningen."
+        },
+        "person": {
+          "name": "Person",
+          "description": "Svara för den här personen (för automationer). Lämna tomt för att använda den som anropar."
+        }
+      }
+    },
+    "follow_me_start": {
+      "name": "Starta Följ mig",
+      "description": "Musiken börjar följa den som anropar (t.ex. via en knapp på dashboarden) från rum till rum. Kräver att Följ mig är påslaget i BPS-inställningarna.",
+      "fields": {
+        "person": {
+          "name": "Person",
+          "description": "Starta för den här personen (för automationer). Lämna tomt för att använda den som anropar."
+        }
+      }
+    },
+    "follow_me_stop": {
+      "name": "Stoppa Följ mig",
+      "description": "Musiken slutar följa den som anropar.",
+      "fields": {
+        "person": {
+          "name": "Person",
+          "description": "Stoppa för den här personen (för automationer). Lämna tomt för att använda den som anropar."
+        }
+      }
+    },
+    "suggest": {
+      "name": "Föreslå",
+      "description": "Fråga personerna som BPS ser i en zon om zonens lampor ska ändras (notis med Ja / Nej / Fråga inte igen som visar exakt vad som händer, plus sensor.bps_suggestion för ett kort på dashboarden). Ett förslag ändrar bara lampor som är länkade till zonen; egna tillägg läggs till på fliken Inlärt. BPS lär sig per person; tre ja i rad så körs det automatiskt nästa gång, med en Ångra-knapp.",
+      "fields": {
+        "id": {
+          "name": "ID",
+          "description": "Fast nyckel för förslaget; svaren lärs in per ID."
+        },
+        "zone": {
+          "name": "Zon",
+          "description": "BPS-zonen vars personer tillfrågas."
+        },
+        "title": {
+          "name": "Rubrik",
+          "description": ""
+        },
+        "message": {
+          "name": "Fråga",
+          "description": ""
+        },
+        "changes": {
+          "name": "Ändringar",
+          "description": "Zonens lampor och deras nivåer i %, eller off. En per rad, t.ex. light.livingroom_ceiling: 30. Bara lampor som är länkade till zonen (Zonlänkar → Lampor) är tillåtna."
+        },
+        "done_message": {
+          "name": "Klart-meddelande",
+          "description": "Visas när det körs automatiskt."
+        },
+        "unknown_message": {
+          "name": "Fråga när bara okända personer är i zonen",
+          "description": "När rumssensorer ser någon utan spårare (barn, gäster) frågas personerna som är hemma med den här texten i stället. Körs aldrig automatiskt."
+        },
+        "once_per": {
+          "name": "Högst en gång per",
+          "description": "evening (nollställs kl. 12), day, hour eller none."
+        }
+      }
+    },
+    "suggestion_clear": {
+      "name": "Stäng förslag",
+      "description": "Tillfället har passerat (t.ex. tv:n stängdes av); ta bort den öppna frågan.",
+      "fields": {
+        "id": {
+          "name": "ID",
+          "description": ""
+        }
+      }
+    },
+    "suggestion_reask": {
+      "name": "Fråga igen",
+      "description": "Glöm att ett förslag redan har ställts under perioden (för test).",
+      "fields": {
+        "id": {
+          "name": "ID",
+          "description": "Lämna tomt för alla förslag."
+        }
+      }
+    }
+  }
+}
