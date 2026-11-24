@@ -319,3 +319,40 @@ def test_engine_parts_start_and_stop_with_ha_callbacks():
     run(scenario())
     assert all(getattr(fn, "_hass_callback", False) for _ev, fn in listeners)
     assert {ev for ev, _ in listeners} >= {"state_changed", "bps_person_zone", "mobile_app_notification_action"}
+
+
+def test_no_question_for_a_room_follow_me_just_joined():
+    hass, f = _follow()
+    put(hass, "anna", "Kitchen")
+    hass.states.async_set("media_player.kitchen", "playing", {"group_members": ["media_player.kitchen"]})
+    real_call = hass.services.async_call
+
+    async def call(domain, service, data=None, blocking=False):
+        if service == "join":   # Sonos reports "playing" before the join call returns
+            f.maybe_ask("media_player.living", ["Livingroom"])
+        return await real_call(domain, service, data, blocking)
+    hass.services.async_call = call
+
+    async def scenario():
+        await f.start_for("anna")
+        put(hass, "anna", "Livingroom")
+        await f.follow("anna", "Livingroom")
+        await asyncio.sleep(0)
+        for t in list(f._drop_tasks.values()):
+            t.cancel()
+    run(scenario())
+    assert not [c for c in hass.services.calls if c[0] == "notify" and "actions" in c[2]["data"]
+                and c[2]["data"]["actions"][0]["action"].startswith("BPS_FOLLOW_YES")]
+
+
+def test_no_question_for_a_group_member():
+    hass, f = _follow()
+    put(hass, "anna", "Livingroom")
+    hass.states.async_set("media_player.living", "playing",
+                          {"group_members": ["media_player.kitchen", "media_player.living"]})
+
+    async def scenario():
+        f.maybe_ask("media_player.living", ["Livingroom"], now=0)
+        await asyncio.sleep(0)
+    run(scenario())
+    assert not [c for c in hass.services.calls if c[0] == "notify"]

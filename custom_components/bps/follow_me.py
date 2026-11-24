@@ -28,6 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 DROP_OLD_ROOM_S = 30
 PAUSED_STOP_MIN = 10
 ASK_COOLDOWN_MIN = 30
+TOUCH_GRACE_S = 90     # a speaker BPS just grouped/ungrouped never triggers a question
 TICK_S = 30
 
 
@@ -49,6 +50,7 @@ class FollowMe:
         self.log = log
         self.sessions = {}     # person -> {"coord", "rooms": [...], "paused_since"}
         self.asked = {}        # speaker -> ts last asked
+        self.touched = {}      # speaker -> ts BPS last joined/unjoined it
         self._drop_tasks = {}
         self._published = set()
         self._unsubs = []
@@ -190,8 +192,14 @@ class FollowMe:
         if not owner and st and st.state == "playing" and target not in self.group(s["coord"]):
             return  # someone plays here outside follow me
         coord = self.group(s["coord"])[0]
-        await self._call("join", coord, group_members=[target])
+        # Claim the room before joining: the speaker reports "playing" while
+        # the join call is still running, and must not look like a manual start.
         s["rooms"].append(target)
+        self.touched[target] = time.time()
+        if not await self._call("join", coord, group_members=[target]):
+            if target in s["rooms"]:
+                s["rooms"].remove(target)
+            return
         s["coord"] = coord
         self.log.log("follow", person=person, event="joined", speaker=target, zone=zone)
         old = self._drop_tasks.pop(person, None)
@@ -208,6 +216,7 @@ class FollowMe:
         for room in list(s["rooms"]):
             if room == here or len(s["rooms"]) <= 1:
                 continue
+            self.touched[room] = time.time()
             await self._call("unjoin", room)
             s["rooms"].remove(room)
             self.log.log("follow", person=person, event="left", speaker=room)
@@ -235,8 +244,10 @@ class FollowMe:
         try:
             await self.hass.services.async_call(
                 "media_player", service, {"entity_id": entity_id, **data}, blocking=True)
+            return True
         except Exception as e:
             _LOGGER.warning("follow me: media_player.%s %s failed: %s", service, entity_id, e)
+            return False
 
     # --- events -----------------------------------------------------------------
     def _zone_changed(self, event):
@@ -271,6 +282,12 @@ class FollowMe:
         now = time.time() if now is None else now
         if not self.home.feature("follow_me") or self.owner(speaker):
             return
+        touched = self.touched.get(speaker)
+        if touched is not None and now - touched < TOUCH_GRACE_S:
+            return  # BPS grouped or ungrouped it a moment ago
+        group = self.group(speaker)
+        if len(group) > 1 and group[0] != speaker:
+            return  # plays as a member of someone else's group, nobody pressed play here
         last = self.asked.get(speaker)
         if last is not None and now - last < ASK_COOLDOWN_MIN * 60:
             return
