@@ -55,6 +55,15 @@ async def async_setup_engine(hass, domain):
     return _stop
 
 
+def _service_error(msg):
+    """An error the automation editor shows (ValueError outside HA, e.g. tests)."""
+    try:
+        from homeassistant.exceptions import ServiceValidationError
+        return ServiceValidationError(msg)
+    except ImportError:
+        return ValueError(msg)
+
+
 def register_services(hass, domain):
     """bps.follow_me_start/stop, bps.suggest, bps.suggestion_answer/clear/reask.
 
@@ -93,10 +102,10 @@ def register_services(hass, domain):
             return
         try:
             d = validate_definition(dict(call.data))
+            result = await sugg.suggest(d)
         except ValueError as e:
             _LOGGER.warning("bps.suggest: %s", e)
-            return
-        result = await sugg.suggest(d)
+            raise _service_error(f"bps.suggest: {e}") from e
         _LOGGER.debug("bps.suggest %s -> %s", d["id"], result)
 
     async def answer(call):

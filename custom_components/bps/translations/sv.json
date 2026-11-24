@@ -57,7 +57,7 @@
     },
     "suggest": {
       "name": "Föreslå",
-      "description": "Fråga personerna som BPS ser i en zon om en åtgärd ska köras (notis med Ja / Nej / Fråga inte igen, plus sensor.bps_suggestion för ett kort på dashboarden). BPS lär sig per person; tre ja i rad så körs det automatiskt nästa gång, med en Ångra-knapp.",
+      "description": "Fråga personerna som BPS ser i en zon om zonens lampor ska ändras (notis med Ja / Nej / Fråga inte igen som visar exakt vad som händer, plus sensor.bps_suggestion för ett kort på dashboarden). Ett förslag ändrar bara lampor som är länkade till zonen; egna tillägg läggs till på fliken Inlärt. BPS lär sig per person; tre ja i rad så körs det automatiskt nästa gång, med en Ångra-knapp.",
       "fields": {
         "id": {
           "name": "ID",
@@ -75,9 +75,9 @@
           "name": "Fråga",
           "description": ""
         },
-        "action": {
-          "name": "Åtgärd",
-          "description": "Skript, scen eller automation som körs vid ja."
+        "changes": {
+          "name": "Ändringar",
+          "description": "Zonens lampor och deras nivåer i %, eller off. En per rad, t.ex. light.livingroom_ceiling: 30. Bara lampor som är länkade till zonen (Zonlänkar → Lampor) är tillåtna."
         },
         "done_message": {
           "name": "Klart-meddelande",
@@ -86,10 +86,6 @@
         "unknown_message": {
           "name": "Fråga när bara okända personer är i zonen",
           "description": "När rumssensorer ser någon utan spårare (barn, gäster) frågas personerna som är hemma med den här texten i stället. Körs aldrig automatiskt."
-        },
-        "undo_entities": {
-          "name": "Entiteter att ångra",
-          "description": "Ta en ögonblicksbild av dessa innan körningen, så att Ångra kan återställa dem."
         },
         "once_per": {
           "name": "Högst en gång per",

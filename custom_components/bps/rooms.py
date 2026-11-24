@@ -126,6 +126,20 @@ class Home:
     def zones_for_speaker(self, speaker) -> list:
         return [z for z in self.zones() if self.speaker_for_zone(z) == speaker]
 
+    def lights(self, zone) -> list:
+        """Lights linked to the zone: the only ones its suggestions may change."""
+        return [e for e in self.zone(zone).get("lights") or [] if isinstance(e, str)]
+
+    def speakers(self) -> list:
+        """Every groupable speaker linked to any zone ("all speakers in the house")."""
+        out = []
+        for _f, z in iter_zones(self.layout):
+            for eid in z.get("media_players") or []:
+                st = self.hass.states.get(eid)
+                if st is not None and st.attributes.get("group_members") is not None and eid not in out:
+                    out.append(eid)
+        return out
+
     def presence_sensors(self, zone) -> list:
         return [e for e in self.zone(zone).get("presence_sensors") or [] if isinstance(e, str)]
 
@@ -163,7 +177,7 @@ class Home:
             return self._area_cache[entity_id]
         zone, by_area = None, {}
         for _f, z in iter_zones(layout):
-            if entity_id in (z.get("media_players") or []) or entity_id in (z.get("presence_sensors") or []):
+            if any(entity_id in (z.get(f) or []) for f in ("media_players", "presence_sensors", "lights")):
                 zone = z["entity_id"]
                 break
             if z.get("area_id"):

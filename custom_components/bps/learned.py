@@ -99,9 +99,10 @@ def build_learned(days, records, defs, prefs, people, me=None, is_admin=False, n
     last_asked = {}
     for h in history:   # newest first
         if h["type"] == "suggestion" and h.get("answer") == "asked":
-            last_asked.setdefault((h["person"], h["id"]), h["t"])
+            key = f"{h['id']}@unknown" if h.get("unknown") else h["id"]
+            last_asked.setdefault((h["person"], key), h["t"])
     suggestions = []
-    asked_ids = {sid for _p, sid in last_asked if sid != "follow_me"}
+    asked_ids = {k.split("@")[0] for _p, k in last_asked if k != "follow_me"}
     ids = sorted(set(defs) | {k.split("@")[0] for pp in prefs.values() for k in pp} | asked_ids)
     for sid in ids:
         d = defs.get(sid) or {}
@@ -109,8 +110,8 @@ def build_learned(days, records, defs, prefs, people, me=None, is_admin=False, n
         for p in sorted(visible):
             for key in (sid, f"{sid}@unknown"):
                 pref = (prefs.get(p) or {}).get(key)
-                asked = last_asked.get((p, sid))
-                if pref is None and not (asked and key == sid):
+                asked = last_asked.get((p, key))
+                if pref is None and not asked:
                     continue
                 pref = pref or {"yes": 0, "no": 0, "streak": 0, "mode": "ask"}
                 rows.append({"person": p, "key": key, "unknown": "@" in key,

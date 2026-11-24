@@ -331,6 +331,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const ZONE_LINK_FIELDS = [
         { key: "media_players", label: "Media players", hint: "Speakers / TVs in this zone" },
         { key: "presence_sensors", label: "Presence sensors", hint: "Cameras (person count), mmWave, occupancy" },
+        { key: "lights", label: "Lights", hint: "The only lights a suggestion for this zone may change" },
     ];
 
     function bpsZoneLinksDialog(zone, payload) {
@@ -4225,7 +4226,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const zoneColor = zoneDisplayColor(zone, zi);
             const uncolored = !!zone.uncolored;
             const noGo = !!zone.no_go;
-            const linkCount = (zone.media_players || []).length + (zone.presence_sensors || []).length + (zone.area_id ? 1 : 0);
+            const linkCount = (zone.media_players || []).length + (zone.presence_sensors || []).length + (zone.lights || []).length + (zone.area_id ? 1 : 0);
             const zoneActions = '<span class="bps-zone-actions">'
                 + `<input type="color" class="bps-zone-swatch${uncolored ? ' bps-swatch-off' : ''}" data-type="zonecolor" data-id="${escHtml(zoneDomId)}" value="${colorToHex(zoneColor)}" title="Pick zone colour">`
                 + `<button class="bps-icon-btn" title="${uncolored ? 'Add colour' : 'Remove colour'}" data-type="zonetogglecolor" data-id="${escHtml(zoneDomId)}">${uncolored ? colorOnSvg : colorOffSvg}</button>`
@@ -5760,8 +5761,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (r.mode !== "never") btns.push(["never", T("Never")]);
                     btns.push(["forget", T("Forget")]);
                     let stats = T("{} yes · {} no", r.yes, r.no);
-                    if (r.mode === "ask" && r.streak) stats += T(" · {} of 3 yes in a row", r.streak);
-                    if (r.last_asked) stats += T(" · last asked {}", r.last_asked.replace("T", " ").slice(0, 16));
+                    if (r.mode === "ask" && r.streak) stats += " · " + T("{} of 3 yes in a row", r.streak);
+                    if (r.last_asked) stats += " · " + T("last asked {}", r.last_asked.replace("T", " ").slice(0, 16));
                     return `<div class="bps-ln-row">
                         <span class="bps-ln-who">${lnEsc(lnName(r.person))}${r.unknown ? ` <span class="bps-links-hint">${lnEsc(T("(when someone unidentified is in the room)"))}</span>` : ""}</span>
                         <span class="bps-ln-mode ${lnEsc(r.mode)}">${lnEsc(T(LN_MODE[r.mode] || r.mode))}</span>
@@ -5769,9 +5770,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         ${btns.map(([a, label]) => `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-action="${a}" data-ln-person="${lnEsc(r.person)}" data-ln-key="${lnEsc(r.key)}">${lnEsc(label)}</button>`).join("")}
                     </div>`;
                 }).join("");
-                return `<div class="bps-ln-sugg">
+                return `<div class="bps-ln-sugg" data-ln-sid="${lnEsc(sg.id)}">
                     <div class="bps-ln-sugg-head"><b>${lnEsc(sg.title)}</b>${sg.zone ? `<span class="bps-links-tag">${lnEsc(sg.zone)}</span>` : ""}
                     ${sg.message ? `<span class="bps-links-hint">${lnEsc(sg.message)}</span>` : ""}</div>
+                    ${lnWhatHtml(sg)}
                     ${rows || `<p class="bps-links-hint">${lnEsc(T("Nobody has been asked yet."))}</p>`}
                 </div>`;
             }).join("");
@@ -5786,6 +5788,167 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         renderLearnedHistory();
     }
+
+    // ---- What a suggestion does: base changes (zone lights) + own extras ----
+    const lnDo = (d) => {
+        if (!d) return "";
+        if (d.run) return T("runs");
+        if (d.media) return d.media === "volume" ? T("volume {} %", d.volume) : T(d.media === "mute" ? "muted" : "paused");
+        if (d.state === "off") return T("off");
+        const parts = [];
+        if (d.brightness_pct != null) parts.push(d.brightness_pct + " %");
+        if (d.color_temp_kelvin != null) parts.push(d.color_temp_kelvin + " K");
+        if (d.rgb_color) parts.push(T("colour"));
+        return parts.join(" ") || T("on");
+    };
+    const lnPctOf = (d) => (d && d.state === "off" ? 0 : (d && d.brightness_pct != null ? d.brightness_pct : 100));
+    const lnPeopleAll = () => (lnData && (lnData.all_people || lnData.people)) || {};
+
+    function lnWhatHtml(sg) {
+        if (!sg.base) return "";
+        const conf = lnData.can_configure;
+        const base = sg.base.map((b) => {
+            const level = conf
+                ? `<input type="number" min="0" max="100" step="5" class="bps-ln-level" value="${lnPctOf(b.do)}" data-ln-override="${lnEsc(b.entity)}"${b.skip ? " disabled" : ""}> %`
+                : `<span>${lnEsc(lnDo(b.do))}</span>`;
+            const tags = (!b.linked ? `<span class="bps-links-tag bps-ln-warn">${lnEsc(T("not linked to the zone, skipped"))}</span>` : "")
+                + (b.overridden ? `<span class="bps-links-tag">${lnEsc(T("changed from {}", lnDo(b.default)))}</span>` : "");
+            const ctl = conf
+                ? `<label class="bps-ln-skip"><input type="checkbox" data-ln-skip="${lnEsc(b.entity)}"${b.skip ? "" : " checked"}> ${lnEsc(T("Include"))}</label>`
+                  + (b.overridden ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-reset="${lnEsc(b.entity)}">${lnEsc(T("Reset"))}</button>` : "")
+                : "";
+            return `<div class="bps-ln-change${b.skip ? " bps-ln-skipped" : ""}"><span class="bps-ln-ent" title="${lnEsc(b.entity)}">💡 ${lnEsc(b.name)}</span>${level}${tags}${ctl}</div>`;
+        }).join("");
+        const ppl = lnPeopleAll();
+        const extras = (sg.extras || []).map((x) => {
+            const name = x.entity === "all_speakers" ? T("All speakers (whole house)") : x.name;
+            const icon = x.do.run ? "▶️" : (x.do.media ? "🔈" : "💡");
+            const where = x.zone && x.zone !== sg.zone ? `<span class="bps-links-tag">${lnEsc(x.zone)}</span>` : "";
+            const noUndo = x.do.run ? `<span class="bps-links-tag">${lnEsc(T("can't be undone"))}</span>` : "";
+            const boxes = Object.keys(ppl).map((p) => {
+                const mayTick = conf || p === lnData.me;
+                return `<label class="bps-ln-person"><input type="checkbox" data-ln-xperson="${lnEsc(p)}" data-ln-xid="${lnEsc(x.id)}"${x.people.includes(p) ? " checked" : ""}${mayTick ? "" : " disabled"}> ${lnEsc(lnName(p))}</label>`;
+            }).join("");
+            const mine = conf || (x.people.length === 1 && x.people[0] === lnData.me);
+            return `<div class="bps-ln-change bps-ln-extra"><span class="bps-ln-ent" title="${lnEsc(x.entity)}">${icon} ${lnEsc(name)}</span><span>${lnEsc(lnDo(x.do))}</span>${where}${noUndo}
+                <span class="bps-ln-people"><span class="bps-links-hint">${lnEsc(T("Applies to:"))}</span>${boxes}</span>
+                ${mine ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-xdel="${lnEsc(x.id)}">${lnEsc(T("Remove"))}</button>` : ""}</div>`;
+        }).join("");
+        return `<div class="bps-ln-what">
+            <div class="bps-ln-what-head">${lnEsc(T("What happens on yes"))} <span class="bps-links-hint">${lnEsc(T("Only lights linked to {} (Zone links → Lights).", sg.zone))}</span></div>
+            ${base || `<p class="bps-links-hint">${lnEsc(T("No lights."))}</p>`}
+            <div class="bps-ln-what-head">${lnEsc(T("Own extras"))} <span class="bps-links-hint">${lnEsc(T("Run only when a ticked person says yes (or it runs automatically for them)."))}</span></div>
+            ${extras || `<p class="bps-links-hint">${lnEsc(T("None yet."))}</p>`}
+            ${lnData.me || conf ? `<button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-ln-xadd="1">${lnEsc(T("+ Add extra"))}</button>` : ""}
+            <div class="bps-ln-xform" hidden></div>
+        </div>`;
+    }
+
+    function lnExtraForm(box) {
+        const c = lnData.choices || { lights: [], speakers: [], run: [] };
+        const conf = lnData.can_configure;
+        const ppl = lnPeopleAll();
+        const opt = (list) => list.map((e) => `<option value="${lnEsc(e.entity_id)}">${lnEsc(e.name)}${e.zone ? " · " + lnEsc(e.zone) : ""}</option>`).join("");
+        box.innerHTML = `
+            <select class="bps-modal-input" data-xf="kind">
+                <option value="light">${lnEsc(T("Light"))}</option>
+                <option value="media">${lnEsc(T("Speaker"))}</option>
+                <option value="run">${lnEsc(T("Script, scene or automation"))}</option>
+            </select>
+            <select class="bps-modal-input" data-xf="entity"></select>
+            <span data-xf="value"></span>
+            <span class="bps-ln-people">${Object.keys(ppl).map((p) => {
+                const mayTick = conf || p === lnData.me;
+                return `<label class="bps-ln-person"><input type="checkbox" data-xf-person="${lnEsc(p)}"${p === lnData.me ? " checked" : ""}${mayTick ? "" : " disabled"}> ${lnEsc(lnName(p))}</label>`;
+            }).join("")}</span>
+            <button type="button" class="bps-btn bps-btn-primary bps-btn-sm" data-xf="save">${lnEsc(T("Add"))}</button>
+            <button type="button" class="bps-btn bps-btn-outline bps-btn-sm" data-xf="cancel">${lnEsc(T("Cancel"))}</button>`;
+        const kind = box.querySelector('[data-xf="kind"]');
+        const ent = box.querySelector('[data-xf="entity"]');
+        const val = box.querySelector('[data-xf="value"]');
+        const fill = () => {
+            if (kind.value === "light") {
+                ent.innerHTML = opt(c.lights);
+                val.innerHTML = `<input type="number" min="0" max="100" step="5" value="20" class="bps-ln-level" data-xf="pct"> % <span class="bps-links-hint">${lnEsc(T("0 = off"))}</span>`;
+            } else if (kind.value === "media") {
+                ent.innerHTML = (c.all_speakers ? `<option value="all_speakers">${lnEsc(T("All speakers (whole house)"))}</option>` : "") + opt(c.speakers);
+                val.innerHTML = `<select class="bps-modal-input" data-xf="media">
+                    <option value="mute">${lnEsc(T("Mute"))}</option><option value="pause">${lnEsc(T("Pause"))}</option>
+                    <option value="volume">${lnEsc(T("Volume"))}</option></select>
+                    <input type="number" min="0" max="100" step="5" value="15" class="bps-ln-level" data-xf="vol" hidden>`;
+                const m = val.querySelector('[data-xf="media"]');
+                m.addEventListener("change", () => { val.querySelector('[data-xf="vol"]').hidden = m.value !== "volume"; });
+            } else {
+                ent.innerHTML = opt(c.run);
+                val.innerHTML = `<span class="bps-links-hint">${lnEsc(T("Runs it. Can't be undone."))}</span>`;
+            }
+        };
+        kind.addEventListener("change", fill);
+        fill();
+        box.hidden = false;
+        return () => {
+            let doV = true;
+            if (kind.value === "light") {
+                const pct = Number(val.querySelector('[data-xf="pct"]').value);
+                doV = pct > 0 ? { brightness_pct: pct } : "off";
+            } else if (kind.value === "media") {
+                const m = val.querySelector('[data-xf="media"]').value;
+                doV = m === "volume" ? { media: "volume", volume: Number(val.querySelector('[data-xf="vol"]').value) } : m;
+            }
+            const people = Array.from(box.querySelectorAll("[data-xf-person]:checked")).map((i) => i.dataset.xfPerson);
+            return { entity: ent.value, do: doV, people };
+        };
+    }
+
+    async function lnEdit(body) {
+        try {
+            const res = await bpsFetch("/api/bps/learned", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            bpsToast(T("Saved."));
+        } catch (err) {
+            bpsToast(T("Not saved: {}", err.message));
+        }
+        loadLearned();
+    }
+
+    const lnSugg = (el) => (lnData.suggestions || []).find((g) => g.id === el.closest("[data-ln-sid]").dataset.lnSid);
+    document.getElementById("lnSuggestions").addEventListener("change", (e) => {
+        const t = e.target;
+        const card = t.closest("[data-ln-sid]");
+        if (!card) return;
+        const id = card.dataset.lnSid;
+        if (t.dataset.lnOverride) {
+            const pct = Number(t.value);
+            lnEdit({ op: "override", id, entity: t.dataset.lnOverride, value: pct > 0 ? pct : "off" });
+        } else if (t.dataset.lnSkip) {
+            lnEdit({ op: "override", id, entity: t.dataset.lnSkip, value: t.checked ? null : "skip" });
+        } else if (t.dataset.lnXperson) {
+            const x = (lnSugg(t).extras || []).find((v) => v.id === t.dataset.lnXid);
+            if (!x) return;
+            const people = new Set(x.people);
+            if (t.checked) people.add(t.dataset.lnXperson); else people.delete(t.dataset.lnXperson);
+            if (!people.size) {
+                bpsToast(T("At least one person must be ticked. Use Remove to delete it."));
+                t.checked = true;
+                return;
+            }
+            lnEdit({ op: "extra_update", id, extra_id: x.id, extra: { id: x.id, entity: x.entity, do: x.do, people: [...people] } });
+        }
+    });
+    let lnCollect = null;
+    document.getElementById("lnSuggestions").addEventListener("click", (e) => {
+        const t = e.target.closest("button");
+        const card = t && t.closest("[data-ln-sid]");
+        if (!card) return;
+        const id = card.dataset.lnSid;
+        if (t.dataset.lnReset) lnEdit({ op: "override", id, entity: t.dataset.lnReset, value: null });
+        else if (t.dataset.lnXdel) lnEdit({ op: "extra_delete", id, extra_id: t.dataset.lnXdel });
+        else if (t.dataset.lnXadd) lnCollect = lnExtraForm(card.querySelector(".bps-ln-xform"));
+        else if (t.dataset.xf === "cancel") card.querySelector(".bps-ln-xform").hidden = true;
+        else if (t.dataset.xf === "save" && lnCollect) lnEdit({ op: "extra_add", id, extra: lnCollect() });
+    });
 
     const LN_REASON = { left_home: "left home", feature_off: "feature off", manual: "manual",
                         notification: "notification", paused: "paused", removed: "removed" };

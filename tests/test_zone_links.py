@@ -58,7 +58,7 @@ def test_links_for_zone_by_normalized_name():
     layout = {"floor": [{"name": "F", "zones": [
         {"entity_id": "Main entrance", "presence_sensors": ["binary_sensor.x"]}]}]}
     assert links_for_zone(layout, "main_entrance")["presence_sensors"] == ["binary_sensor.x"]
-    assert links_for_zone(layout, "nope") == {"area_id": None, "media_players": [], "presence_sensors": []}
+    assert links_for_zone(layout, "nope") == {"area_id": None, "media_players": [], "presence_sensors": [], "lights": []}
     assert links_for_zone([], "x")["media_players"] == []
 
 

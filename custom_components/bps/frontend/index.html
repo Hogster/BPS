@@ -411,6 +411,8 @@ card:
       content: |-
         ### {{ state_attr('sensor.bps_suggestion', 'title') }}
         {{ state_attr('sensor.bps_suggestion', 'text') }}
+
+        {{ state_attr('sensor.bps_suggestion', 'changes') }}
     - type: horizontal-stack
       cards:
         - type: button

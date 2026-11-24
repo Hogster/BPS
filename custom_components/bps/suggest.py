@@ -9,9 +9,15 @@ moment is the automation's trigger, *who* to ask and *how* is BPS's job.
       zone: Livingroom            # ask the people BPS sees in this zone
       title: "📺 Cozy?"
       message: Dim the lights for the TV?
-      action: script.tv_cozy      # run on yes (script / scene / automation)
-      undo_entities: [light.a, light.b]   # optional: snapshot -> Undo
+      changes:                    # only lights linked to the zone
+        light.livingroom_ceiling: 30      # %
+        light.livingroom_spots: "off"
       unknown_message: Someone is watching TV ...   # optional, see below
+
+A suggestion only ever changes the zone's own linked lights (see plan.py):
+BPS refuses anything else and never runs scripts on its own. People add
+their own extras (other lights, speakers, scripts they pick) in the Learned
+tab, ticked per person.
 
 BPS then
 * asks each known person in the zone (notification with Yes / No / Don't ask
@@ -32,6 +38,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 
+from . import plan as planner
 from .rooms import as_callback
 from .texts import clear, notify, text
 
@@ -81,23 +88,21 @@ def validate_definition(data) -> dict:
     sid = str(data.get("id") or "").strip()
     if not sid or not all(c.isalnum() or c in "_-" for c in sid):
         raise ValueError("id must be letters, digits, _ or -")
-    for f in ("zone", "title", "message", "action"):
+    if data.get("action"):
+        raise ValueError("action is not supported: a suggestion only changes the zone's own "
+                         "lights (changes). Add scripts as your own extras in the Learned tab.")
+    for f in ("zone", "title", "message"):
         if not str(data.get(f) or "").strip():
             raise ValueError(f"{f} is required")
-    action = str(data["action"]).strip()
-    if action.split(".", 1)[0] not in ("script", "scene", "automation"):
-        raise ValueError("action must be a script, scene or automation")
+    changes = planner.parse_changes(data.get("changes"))
     once = str(data.get("once_per") or "evening")
     if once not in ONCE_PER:
         raise ValueError(f"once_per must be one of {', '.join(ONCE_PER)}")
-    undo = data.get("undo_entities") or []
-    if isinstance(undo, str):
-        undo = [undo]
     return {"id": sid, "zone": str(data["zone"]).strip(), "title": str(data["title"]),
-            "message": str(data["message"]), "action": action,
+            "message": str(data["message"]), "changes": changes,
             "done_message": str(data.get("done_message") or ""),
             "unknown_message": str(data.get("unknown_message") or ""),
-            "undo_entities": [str(e) for e in undo], "once_per": once}
+            "once_per": once}
 
 
 class Suggestions:
@@ -109,6 +114,8 @@ class Suggestions:
         self.handled = {}    # id -> period key it was last asked/done in
         self.defs = {}       # id -> last definition (answers may come later)
         self.open = {}       # id -> open question for the dashboard
+        self.overrides = {}  # id -> light -> spec | {"skip": True} (administrator)
+        self.extras = {}     # id -> [extra] (people's own additions)
         self._store = None
         self._unsubs = []
         self._task = None
@@ -123,12 +130,15 @@ class Suggestions:
             data = {}
         self.prefs = data.get("prefs") or {}
         self.handled = data.get("handled") or {}
-        self.defs = data.get("defs") or {}
+        self.defs = {k: v for k, v in (data.get("defs") or {}).items() if "changes" in v}
+        self.overrides = data.get("overrides") or {}
+        self.extras = data.get("extras") or {}
 
     def _save(self):
         if self._store:
             self._store.async_delay_save(
-                lambda: {"prefs": self.prefs, "handled": self.handled, "defs": self.defs}, 2)
+                lambda: {"prefs": self.prefs, "handled": self.handled, "defs": self.defs,
+                         "overrides": self.overrides, "extras": self.extras}, 2)
 
     def start(self):
         self._unsubs = [self.hass.bus.async_listen(
@@ -157,12 +167,36 @@ class Suggestions:
         return self.prefs.setdefault(person, {}).setdefault(
             key, {"yes": 0, "no": 0, "streak": 0, "mode": "ask"})
 
+    # --- what it does -------------------------------------------------------------
+    def name_of(self, eid):
+        st = self.hass.states.get(eid)
+        name = str((st.attributes.get("friendly_name") if st else None) or "").strip()
+        return name or eid.split(".", 1)[-1].replace("_", " ")
+
+    def plan(self, d, deciders):
+        home = self.home
+        return planner.plan(
+            d, self.overrides.get(d["id"]), self.extras.get(d["id"]), deciders,
+            zone_lights=home.lights(d["zone"]), zone_of=home.zone_of_entity,
+            occupants=home.occupants, speakers=home.speakers())
+
+    def summary(self, d, deciders):
+        steps, _skipped = self.plan(d, deciders)
+        return planner.summary(steps, self.name_of, lambda k: text(self.hass, k), d["zone"])
+
+    def check(self, d):
+        """Refuse a definition that touches anything outside the zone's lights."""
+        planner.check_zone(d["changes"], d["zone"], self.home.lights(d["zone"]))
+
     # --- asking -----------------------------------------------------------------
     async def suggest(self, d, now=None):
         """Handle a bps.suggest call (definition already validated)."""
         now = time.time() if now is None else now
         sid = d["id"]
-        self.defs[sid] = d
+        self.check(d)
+        if self.defs.get(sid) != d:
+            self.defs[sid] = d
+            self._save()      # the Learned tab shows it even if nobody was asked
         if not self.home.feature("suggestions"):
             return "feature_off"
         period = period_key(d["once_per"], now)
@@ -184,35 +218,50 @@ class Suggestions:
         info = self.home.people()
         url = self.home.tap_path()
         tag = f"bps_sugg_{sid}"
-        if key == sid and any(self.pref(p, key)["mode"] == "auto" for p in active):
-            await self._run_action(d)
+        auto = [p for p in active if self.pref(p, key)["mode"] == "auto"] if key == sid else []
+        if auto:
+            await self._run_action(d, auto)
             done = d["done_message"] or d["title"]
+            what = self.summary(d, auto)
             for p in active:
                 self.log.log("suggestion", kind=sid, person=p, answer="auto")
-                await notify(self.hass, info[p]["notify"], d["title"], done, tag=tag, url=url,
+                await notify(self.hass, info[p]["notify"], d["title"], f"{done}\n{what}", tag=tag, url=url,
                              actions=[{"action": f"BPS_SUGG|{sid}|{p}|undo", "title": text(self.hass, "undo")}])
-            self._set_open(sid, key, "done", d["title"], done, active, now)
+            self._set_open(sid, key, "done", d["title"], done, active, now, what)
             return "auto"
         for p in active:
             self.log.log("suggestion", kind=key, person=p, answer="asked")
-            await notify(self.hass, info[p]["notify"], d["title"], ask_text, tag=tag, url=url, actions=[
+            what = self.summary(d, [p])
+            await notify(self.hass, info[p]["notify"], d["title"], f"{ask_text}\n{what}", tag=tag, url=url, actions=[
                 {"action": f"BPS_SUGG|{key}|{p}|yes", "title": text(self.hass, "yes")},
                 {"action": f"BPS_SUGG|{key}|{p}|no", "title": text(self.hass, "no")},
                 {"action": f"BPS_SUGG|{key}|{p}|never", "title": text(self.hass, "never"),
                  "destructive": True}])
-        self._set_open(sid, key, "ask", d["title"], ask_text, active, now)
+        self._set_open(sid, key, "ask", d["title"], ask_text, active, now, self.summary(d, []))
         return "asked"
 
-    async def _run_action(self, d):
-        if d["undo_entities"]:
-            await self.hass.services.async_call("scene", "create", {
-                "scene_id": f"bps_undo_{d['id']}", "snapshot_entities": d["undo_entities"]}, blocking=True)
-        domain = d["action"].split(".", 1)[0]
-        service = "trigger" if domain == "automation" else "turn_on"
-        await self.hass.services.async_call(domain, service, {"entity_id": d["action"]}, blocking=False)
+    async def _run_action(self, d, deciders):
+        """Base changes + the deciders' own extras; snapshot first for Undo."""
+        steps, skipped = self.plan(d, deciders)
+        undo = planner.undo_entities(steps)
+        if undo:
+            try:
+                await self.hass.services.async_call("scene", "create", {
+                    "scene_id": f"bps_undo_{d['id']}", "snapshot_entities": undo}, blocking=True)
+            except Exception as e:
+                _LOGGER.warning("suggestion %s: undo snapshot failed: %s", d["id"], e)
+        for domain, service, data in planner.service_calls(steps):
+            try:
+                await self.hass.services.async_call(domain, service, data, blocking=False)
+            except Exception as e:
+                _LOGGER.warning("suggestion %s: %s.%s %s failed: %s", d["id"], domain, service,
+                                data.get("entity_id"), e)
+        for sk in skipped:
+            _LOGGER.info("suggestion %s: %s skipped (%s)", d["id"], sk["entity"], sk["reason"])
+        return steps, skipped
 
     async def _undo(self, d):
-        if d["undo_entities"]:
+        if self.hass.states.get(f"scene.bps_undo_{d['id']}") is not None:
             await self.hass.services.async_call(
                 "scene", "turn_on", {"entity_id": f"scene.bps_undo_{d['id']}"}, blocking=False)
 
@@ -225,7 +274,7 @@ class Suggestions:
             return False
         self.log.log("suggestion", kind=key, person=person, answer=answer, via=via)
         if answer == "yes":
-            await self._run_action(d)
+            await self._run_action(d, [person])
         elif answer == "undo":
             await self._undo(d)
         learn(self.pref(person, key), answer, key)
@@ -256,14 +305,15 @@ class Suggestions:
             return
         sid, q = next(iter(self.open.items()))
         attrs.update({"icon": "mdi:lightbulb-question", "suggestion": sid, "key": q["key"],
-                      "title": q["title"], "text": q["text"], "asked": q["asked"],
+                      "title": q["title"], "text": q["text"], "changes": q.get("changes", ""),
+                      "asked": q["asked"],
                       "since": datetime.fromtimestamp(q["at"]).isoformat(timespec="seconds"),
                       "open_count": len(self.open)})
         self.hass.states.async_set("sensor.bps_suggestion", q["kind"], attrs)
 
-    def _set_open(self, sid, key, kind, title, body, asked, now):
+    def _set_open(self, sid, key, kind, title, body, asked, now, changes=""):
         self.open[sid] = {"key": key, "kind": kind, "title": title, "text": body,
-                          "asked": list(asked), "at": now}
+                          "changes": changes, "asked": list(asked), "at": now}
         self.publish()
 
     async def _clear_open(self, sid):

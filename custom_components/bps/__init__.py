@@ -56,6 +56,7 @@ from .placement import analyze as analyze_placement
 from .usage import async_setup_usage
 from .engine import async_setup_engine, register_services
 from .learned import apply_pref_action, build_learned, scan_log
+from . import plan as sugg_plan
 from .access import can_configure, denied, user_access
 from .persons import (
     PersonTracker, merge_settings, validate_settings, guess_kind, guess_charging,
@@ -2257,6 +2258,17 @@ class BPSLearnedAPI(HomeAssistantView):
             days, recs = [], []
         people = home.people()
         payload = build_learned(days, recs, sugg.defs, sugg.prefs, people, me, is_admin)
+        configure = can_configure(hass, request)
+        payload["can_configure"] = configure
+        for sg in payload["suggestions"]:
+            d = sugg.defs.get(sg["id"])
+            if not d:
+                continue
+            extras = sugg_plan.visible_extras(sugg.extras.get(sg["id"]), me, configure)
+            sg.update(sugg_plan.learned_view(d, sugg.overrides.get(sg["id"]), extras,
+                                             home.lights(d["zone"]), sugg.name_of, home.zone_of_entity))
+        payload["all_people"] = {p: {"name": v.get("name", p)} for p, v in people.items()}
+        payload["choices"] = _extra_choices(hass, home)
         payload["history_enabled"] = home.feature("history")
         payload["features"] = {k: home.feature(k) for k in ("follow_me", "suggestions")}
         return web.json_response(payload)
@@ -2269,6 +2281,11 @@ class BPSLearnedAPI(HomeAssistantView):
             return web.Response(status=503, text="BPS is still starting")
         try:
             body = await request.json()
+        except Exception:
+            return web.Response(status=400, text="JSON body required")
+        if body.get("op"):
+            return self._edit(hass, request, body, me, home, sugg)
+        try:
             person, key, action = str(body["person"]), str(body["key"]), str(body["action"])
         except Exception:
             return web.Response(status=400, text="person, key and action are required")
@@ -2285,6 +2302,58 @@ class BPSLearnedAPI(HomeAssistantView):
         if home_log:
             home_log.log("suggestion", kind=key, person=person, answer=f"set_{action}", via="learned_tab")
         return web.json_response({"ok": True})
+
+    @staticmethod
+    def _edit(hass, request, body, me, home, sugg):
+        """Overrides (configurers) and extras (everyone, for themselves)."""
+        configure = can_configure(hass, request)
+        op, sid = str(body.get("op")), str(body.get("id") or "")
+        if sid not in sugg.defs:
+            return web.Response(status=400, text="Unknown suggestion")
+        try:
+            if op == "override":
+                if not configure:
+                    return denied()
+                entity = str(body.get("entity") or "")
+                if entity not in sugg.defs[sid]["changes"]:
+                    return web.Response(status=400, text="Not one of the suggestion's lights")
+                sugg_plan.set_override(sugg.overrides.setdefault(sid, {}), entity, body.get("value"))
+            elif op in ("extra_add", "extra_update", "extra_delete"):
+                extras = sugg.extras.setdefault(sid, [])
+                old = None
+                if op != "extra_add":
+                    xid = str(body.get("extra_id") or (body.get("extra") or {}).get("id") or "")
+                    old = next((e for e in extras if e["id"] == xid), None)
+                    if old is None:
+                        return web.Response(status=400, text="Unknown extra")
+                new = None if op == "extra_delete" else sugg_plan.make_extra(
+                    body.get("extra"), home.people(), old["id"] if old else None)
+                if not sugg_plan.may_change_extra(old, new, me, configure):
+                    return denied()
+                if old is not None:
+                    extras.remove(old)
+                if new is not None:
+                    extras.append(new)
+            else:
+                return web.Response(status=400, text="Unknown op")
+        except ValueError as e:
+            return web.Response(status=400, text=str(e))
+        sugg._save()
+        return web.json_response({"ok": True})
+
+
+def _extra_choices(hass, home):
+    """What an extra can change: lights, speakers, scripts/scenes/automations."""
+    def items(domain):
+        out = []
+        for st in hass.states.async_all(domain):
+            out.append({"entity_id": st.entity_id,
+                        "name": str(st.attributes.get("friendly_name") or "").strip() or st.entity_id,
+                        "zone": home.zone_of_entity(st.entity_id)})
+        return sorted(out, key=lambda c: c["name"].lower())
+    return {"lights": items("light"), "speakers": items("media_player"),
+            "run": items("script") + items("scene") + items("automation"),
+            "all_speakers": len(home.speakers())}
 
 
 def _settings_payload(hass):

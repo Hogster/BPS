@@ -3429,3 +3429,17 @@ input[type="checkbox"] { accent-color: hsl(var(--sidebar-primary)); }
 .bps-ln-item > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .bps-ln-filter { margin-left: auto; font-size: 12px; padding: 3px 6px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--background)); color: hsl(var(--foreground)); }
 .bps-btn-sm { height: 24px; padding: 0 8px; font-size: 12px; font-weight: 500; }
+
+/* Learned: what a suggestion does */
+.bps-ln-what { margin: 8px 0 4px; padding: 8px 10px; border-radius: 8px; background: hsl(var(--muted) / 0.5); font-size: 13px; }
+.bps-ln-what-head { font-weight: 600; margin: 6px 0 2px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.bps-ln-what-head .bps-links-hint { font-weight: 400; }
+.bps-ln-change { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 4px 0; }
+.bps-ln-change .bps-ln-ent { min-width: 140px; font-weight: 500; overflow-wrap: anywhere; }
+.bps-ln-skipped .bps-ln-ent { text-decoration: line-through; color: hsl(var(--muted-foreground)); }
+.bps-ln-level { width: 64px; padding: 2px 6px; border: 1px solid hsl(var(--border)); border-radius: 6px; background: hsl(var(--background)); color: hsl(var(--foreground)); }
+.bps-ln-people { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.bps-ln-person, .bps-ln-skip { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+.bps-ln-warn { color: hsl(0 70% 50%); border-color: hsl(0 70% 50%); }
+.bps-ln-xform { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 8px; }
+.bps-ln-xform .bps-modal-input { width: auto; max-width: 100%; }

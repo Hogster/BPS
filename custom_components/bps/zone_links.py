@@ -1,10 +1,13 @@
-"""Zone links: which HA area, media players and presence sensors belong to a zone.
+"""Zone links: which HA area, media players, presence sensors and lights belong to a zone.
 
 A zone stores its links on the zone object in the layout:
 
     {"entity_id": "Kitchen", "zone_id": "...", "area_id": "kok",
      "media_players": ["media_player.kitchen_speaker"],
-     "presence_sensors": ["sensor.camera_kitchen_person_count"]}
+     "presence_sensors": ["sensor.camera_kitchen_person_count"],
+     "lights": ["light.kitchen_ceiling"]}
+
+The lights are the only ones a suggestion for the zone may change.
 
 What the user picked is always the source of truth. To make picking fast even
 when naming is sloppy, this module also *suggests* links, from (best first):
@@ -33,7 +36,7 @@ PRESENCE_DEVICE_CLASSES = ("occupancy", "presence")
 # for anything but people say nothing about who is in a room.
 NON_PERSON_LABELS = ("all", "cat", "dog", "bird", "horse", "car", "bicycle",
                      "motorcycle", "boat", "bus", "license_plate", "package")
-LINK_FIELDS = ("media_players", "presence_sensors")
+LINK_FIELDS = ("media_players", "presence_sensors", "lights")
 
 
 def norm(text) -> str:
@@ -191,16 +194,20 @@ def collect_candidates(hass) -> tuple[list[dict], dict]:
         return None
 
     media, presence = [], []
-    for st in hass.states.async_all(["media_player", "binary_sensor", "sensor"]):
+    lights = []
+    for st in hass.states.async_all(["media_player", "binary_sensor", "sensor", "light"]):
         eid = st.entity_id
         item = {"entity_id": eid,
                 "name": st.attributes.get("friendly_name") or eid,
                 "area_id": area_of(eid)}
         if eid.startswith("media_player."):
             media.append(item)
+        elif eid.startswith("light."):
+            lights.append(item)
         elif _is_presence(eid, st.attributes.get("device_class"),
                           st.attributes.get("unit_of_measurement")):
             presence.append(item)
     media.sort(key=lambda c: c["name"].lower())
     presence.sort(key=lambda c: c["name"].lower())
-    return areas, {"media_players": media, "presence_sensors": presence}
+    lights.sort(key=lambda c: c["name"].lower())
+    return areas, {"media_players": media, "presence_sensors": presence, "lights": lights}

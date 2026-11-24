@@ -68,8 +68,9 @@ def make_hass(follow=True, suggestions=True):
                                  "person.bo": {"trackers": [{"key": "b"}], "notify": "mobile_app_bo"}}},
         "layout": {"floor": [{"name": "F", "zones": [
             {"entity_id": "Kitchen", "area_id": "kok", "media_players": ["media_player.kitchen"],
-             "presence_sensors": ["sensor.kitchen_count"]},
-            {"entity_id": "Livingroom", "media_players": ["media_player.tv_box", "media_player.living"]},
+             "presence_sensors": ["sensor.kitchen_count"], "lights": ["light.k"]},
+            {"entity_id": "Livingroom", "media_players": ["media_player.tv_box", "media_player.living"],
+             "lights": ["light.a", "light.b"]},
             {"entity_id": "Office"},
         ]}]},
     }}
@@ -121,9 +122,12 @@ def test_period_key_evening_resets_at_noon():
 
 def test_validate_definition():
     d = validate_definition({"id": "tv", "zone": "Livingroom", "title": "T", "message": "M",
-                             "action": "script.x", "undo_entities": "light.a"})
-    assert d["undo_entities"] == ["light.a"] and d["once_per"] == "evening"
-    for bad in ({"id": "a b"}, {"id": "x", "zone": "Z", "title": "T", "message": "M", "action": "light.x"}):
+                             "changes": {"light.a": 30, "light.b": "off"}})
+    assert d["changes"] == {"light.a": {"state": "on", "brightness_pct": 30}, "light.b": {"state": "off"}}
+    assert d["once_per"] == "evening"
+    base = {"id": "x", "zone": "Z", "title": "T", "message": "M"}
+    for bad in ({"id": "a b"}, dict(base, action="script.x", changes={"light.a": 30}),
+                dict(base, changes={"script.x": "on"}), dict(base, changes={"light.a": 130}), base):
         with pytest.raises(ValueError):
             validate_definition(bad)
 
@@ -163,8 +167,9 @@ def test_activity_attribution():
 
 # --- suggestions ------------------------------------------------------------------
 
-DEF = {"id": "tv", "zone": "Livingroom", "title": "TV", "message": "Cozy?", "action": "script.cozy",
-       "done_message": "", "unknown_message": "", "undo_entities": ["light.a"], "once_per": "evening"}
+DEF = {"id": "tv", "zone": "Livingroom", "title": "TV", "message": "Cozy?",
+       "changes": {"light.a": {"state": "on", "brightness_pct": 30}, "light.b": {"state": "off"}},
+       "done_message": "", "unknown_message": "", "once_per": "evening"}
 
 
 def _sugg(**kw):
@@ -195,12 +200,15 @@ def test_yes_runs_action_with_undo_snapshot_and_learns_auto():
         run(s.suggest(dict(DEF)))
         run(s.answer_open("anna", "yes"))
     calls = [(d, sv) for d, sv, _ in hass.services.calls]
-    assert ("scene", "create") in calls and ("script", "turn_on") in calls
+    assert ("scene", "create") in calls
+    assert ("light", "turn_on", {"entity_id": "light.a", "brightness_pct": 30}) in hass.services.calls
+    assert ("light", "turn_off", {"entity_id": "light.b"}) in hass.services.calls
     assert s.pref("anna", "tv")["mode"] == "auto"
     s.reask()
     hass.services.calls.clear()
     assert run(s.suggest(dict(DEF))) == "auto"
-    assert ("script", "turn_on") in [(d, sv) for d, sv, _ in hass.services.calls]
+    assert ("light", "turn_off", {"entity_id": "light.b"}) in hass.services.calls
+    hass.states.async_set("scene.bps_undo_tv", "scening")
     run(s.answer_open("anna", "undo"))
     assert ("scene", "turn_on") in [(d, sv) for d, sv, _ in hass.services.calls]
     assert s.pref("anna", "tv")["mode"] == "ask"
@@ -356,3 +364,54 @@ def test_no_question_for_a_group_member():
         await asyncio.sleep(0)
     run(scenario())
     assert not [c for c in hass.services.calls if c[0] == "notify"]
+
+
+# --- exact changes and extras --------------------------------------------------------
+
+def test_suggestion_refuses_lights_outside_the_zone():
+    hass, s = _sugg()
+    put(hass, "anna", "Livingroom")
+    with pytest.raises(ValueError, match="not linked to the zone"):
+        run(s.suggest(dict(DEF, changes={"light.k": {"state": "off"}})))
+    assert not [c for c in hass.services.calls if c[0] == "notify"]
+
+
+def test_question_lists_exactly_what_happens_per_person():
+    hass, s = _sugg()
+    hass.states.async_set("light.a", "on", {"friendly_name": "Ceiling"})
+    hass.states.async_set("light.b", "on", {"friendly_name": "Spots"})
+    s.extras["tv"] = [{"id": "x1", "entity": "all_speakers", "do": {"media": "mute"}, "people": ["anna"]}]
+    put(hass, "anna", "Livingroom")
+    put(hass, "bo", "Livingroom")
+    run(s.suggest(dict(DEF)))
+    msg = {c[1]: c[2]["message"] for c in hass.services.calls if c[0] == "notify"}
+    assert msg["mobile_app_anna"].endswith("Ceiling 30 % · Spots off · All speakers muted")
+    assert msg["mobile_app_bo"].endswith("Ceiling 30 % · Spots off")
+
+
+def test_extras_run_only_for_ticked_people_and_other_rooms_are_safe():
+    hass, s = _sugg()
+    put(hass, "anna", "Livingroom")
+    put(hass, "bo", "Kitchen")
+    s.extras["tv"] = [
+        {"id": "x1", "entity": "all_speakers", "do": {"media": "mute"}, "people": ["anna"]},
+        {"id": "x2", "entity": "light.k", "do": {"state": "off"}, "people": ["anna"]},
+        {"id": "x3", "entity": "script.bo_only", "do": {"run": True}, "people": ["bo"]},
+    ]
+    s.overrides["tv"] = {"light.a": {"state": "on", "brightness_pct": 20}}
+    run(s.suggest(dict(DEF)))
+    run(s.answer_open("anna", "yes"))
+    calls = hass.services.calls
+    assert ("light", "turn_on", {"entity_id": "light.a", "brightness_pct": 20}) in calls   # override
+    assert ("media_player", "volume_mute", {"entity_id": "media_player.kitchen", "is_volume_muted": True}) in calls
+    assert ("media_player", "volume_mute", {"entity_id": "media_player.living", "is_volume_muted": True}) in calls
+    assert not [c for c in calls if c[2].get("entity_id") == "light.k"]      # bo is in the kitchen
+    assert not [c for c in calls if c[0] == "script"]                         # bo's extra, anna's yes
+
+
+def test_definition_is_saved_even_when_nobody_is_asked():
+    hass, s = _sugg()
+    saved = []
+    s._save = lambda: saved.append(dict(s.defs))
+    assert run(s.suggest(dict(DEF))) == "nobody"
+    assert saved and "tv" in saved[-1]

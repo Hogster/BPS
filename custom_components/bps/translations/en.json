@@ -57,7 +57,7 @@
     },
     "suggest": {
       "name": "Suggest",
-      "description": "Ask the people BPS sees in a zone whether to run an action (notification with Yes / No / Don't ask again, plus sensor.bps_suggestion for a dashboard card). BPS learns per person; 3 yes in a row and it runs automatically next time, with an Undo button.",
+      "description": "Ask the people BPS sees in a zone whether to change the zone's lights (notification with Yes / No / Don't ask again listing exactly what happens, plus sensor.bps_suggestion for a dashboard card). A suggestion only changes lights linked to the zone; people add their own extras in the Learned tab. BPS learns per person; 3 yes in a row and it runs automatically next time, with an Undo button.",
       "fields": {
         "id": {
           "name": "ID",
@@ -75,9 +75,9 @@
           "name": "Question",
           "description": ""
         },
-        "action": {
-          "name": "Action",
-          "description": "Script, scene or automation to run on yes."
+        "changes": {
+          "name": "Changes",
+          "description": "The zone's lights and their levels in %, or off. One per line, e.g. light.livingroom_ceiling: 30. Only lights linked to the zone (Zone links → Lights) are allowed."
         },
         "done_message": {
           "name": "Done message",
@@ -86,10 +86,6 @@
         "unknown_message": {
           "name": "Question when only unidentified people are in the zone",
           "description": "When room sensors see someone without a tracker (kids, guests), ask the people at home with this text instead. Never runs automatically."
-        },
-        "undo_entities": {
-          "name": "Undo entities",
-          "description": "Snapshot these before running, so Undo can restore them."
         },
         "once_per": {
           "name": "At most once per",
