@@ -19,7 +19,7 @@ BPS turns the Bluetooth receivers you may already have (ESPHome proxies, Shelly 
 ## Get started
 1. **Hardware:** at least 3 Bluetooth receivers that hear each spot, and something Bluetooth on each person (phone, watch or tag). See the **[hardware guide](https://github.com/Hogster/BPS/wiki/Hardware)** for what to buy and where to put it.
 2. **Install [Bermuda](https://github.com/agittins/bermuda)** from HACS. BPS builds on its distance estimates.
-3. **Install BPS** from HACS with the button above, and restart Home Assistant. Then press **Turn on** for each device under *Settings → Bluetooth devices* in the BPS panel; it turns on Bermuda's distance sensors for you. New to phones in Bermuda? See **[Add a phone or watch](https://github.com/Hogster/BPS/wiki/Add-a-phone-or-watch)**.
+3. **Install BPS** from HACS with the button above, and restart Home Assistant. Then turn on Bermuda's *Distance to …* sensors for each device: from 0.3.0b2 with one click under *Settings → Bluetooth devices* in the BPS panel, before that by hand ([Installation](https://github.com/Hogster/BPS/wiki/Installation)). New to phones in Bermuda? See **[Add a phone or watch](https://github.com/Hogster/BPS/wiki/Add-a-phone-or-watch)**.
 4. **Open BPS in the sidebar:** upload a floor plan, place your receivers, set the scale and draw zones. The [wiki](https://github.com/Hogster/BPS/wiki/Initial-set%E2%80%90up) walks you through it.
 
 Questions and ideas: the [Home Assistant Community thread](https://community.home-assistant.io/t/bps-the-indoor-precise-tracking-system/843429) or [issues](https://github.com/Hogster/BPS/issues).
