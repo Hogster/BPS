@@ -3089,7 +3089,7 @@ select.bps-input { cursor: pointer; }
     background: hsl(var(--sidebar-accent));
     box-shadow: inset 3px 0 0 hsl(var(--primary));
 }
-/* Mount-height badge on a receiver row (set via the ruler button). The border
+/* Mount-height badge on a receiver row (it is also the button that sets it). The border
    keeps the pill legible on hovered/focused rows, whose background is the
    same --sidebar-accent the badge fill uses. */
 .bps-rec-height {
@@ -3102,7 +3102,12 @@ select.bps-input { cursor: pointer; }
     border: 1px solid hsl(var(--border));
     border-radius: 8px;
     white-space: nowrap;
+    font-family: inherit;
+    cursor: pointer;
 }
+.bps-rec-height:hover { color: hsl(var(--foreground)); border-color: hsl(var(--primary)); }
+/* Not set yet: dashed, so it reads as an invitation rather than a value. */
+.bps-rec-height-unset { border-style: dashed; background: none; }
 .bps-icon-btn {
     flex: 0 0 auto;
     display: inline-flex;
@@ -3447,3 +3452,10 @@ input[type="checkbox"] { accent-color: hsl(var(--sidebar-primary)); }
 .bps-ln-tf { display: grid; gap: 2px; font-size: 13px; }
 .bps-ln-tf .bps-modal-input { width: 100%; box-sizing: border-box; }
 .bps-ln-tf-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.bps-ln-textform[hidden], .bps-ln-xform[hidden] { display: none; }
+
+/* Settings → Bluetooth devices: one row per Bermuda device */
+.bps-dist-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid hsl(var(--border)); }
+.bps-dist-row:last-child { border-bottom: none; }
+.bps-dist-name { font-weight: 600; flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
+.bps-dist-on { height: 26px; padding: 0 10px; font-size: 12px; }

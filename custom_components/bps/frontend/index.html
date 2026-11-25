@@ -444,6 +444,20 @@ card:
             </div>
             <div class="bps-card">
                 <div class="bps-section-head">
+                    <h3>Bluetooth devices</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">BPS needs one "Distance to …" sensor per receiver for every phone, watch or tag. Bermuda creates them turned off; turn them on here instead of one by one. A device only shows up here once Bermuda tracks it.</span>
+                    </span>
+                </div>
+                <div id="setDistance"><p class="bps-links-hint">Loading…</p></div>
+                <label class="bps-switch bps-set-row">
+                    <input type="checkbox" id="setAutoDistance">
+                    <span class="bps-slider"></span>
+                    <span><b>Turn on new receivers automatically</b> <span class="bps-links-hint">When you add a receiver, its distance sensors are turned on for every device that already has some on.</span></span>
+                </label>
+            </div>
+            <div class="bps-card">
+                <div class="bps-section-head">
                     <h3>Persons</h3>
                     <span class="tooltip">❓
                         <span class="tooltip-text">Link each person to their BPS trackers, best first. The first usable tracker decides the person's zone; one that is charging, not seen, or lying still while a lower one moves is skipped. Result: sensor.bps_person_&lt;name&gt;_zone.</span>

@@ -1992,7 +1992,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             return;
         }
-        // Ruler button on a receiver row: set/clear its mount height (m above
+        // Height button on a receiver row: set/clear its mount height (m above
         // this floor). Checked before focusrec so editing never focuses.
         if (event.target.closest('[data-type="recheight"]')) {
             const recId = event.target.closest('[data-type="recheight"]').getAttribute('data-id');
@@ -4139,7 +4139,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const trashSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>';
         const pencilSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
         // Vertical double-arrow: the receiver mount-height editor.
-        const rulerSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"></path><path d="M8 7l4-4 4 4"></path><path d="M8 17l4 4 4-4"></path></svg>';
         const chevronSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"></path></svg>';
         // Toggle a zone's colour on/off: filled drop = add, slashed circle = remove.
         const colorOnSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="currentColor"></circle></svg>';
@@ -4196,10 +4195,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             // circle stay visible), mirroring a click on its icon. The trash
             // button's handler runs first, so removing never focuses.
             const cls = "bps-rec-row" + (r.entity_id === focusedReceiver ? " bps-rec-focused" : "");
-            // Mount height badge + editor. The ruler button prompts for the
+            // Mount height button. Clicking it prompts for the
             // height (m above this floor); the badge shows the current value.
-            const hBadge = Number.isFinite(r.height)
-                ? `<span class="bps-rec-height" title="Mount height above this floor">${escHtml(String(r.height))} m</span>` : "";
+            // A text button, not an icon: "Height?" until set, then "1.2 m".
+            const hasH = Number.isFinite(r.height);
+            const hBadge = `<button class="bps-rec-height${hasH ? "" : " bps-rec-height-unset"}"`
+                + ` title="${escHtml(bpsTr("Mount height above this floor (m). Click to change."))}"`
+                + ` data-type="recheight" data-id="${escHtml(r.entity_id)}">`
+                + (hasH ? `${escHtml(String(r.height))} m` : escHtml(bpsTr("Height?"))) + `</button>`;
             // Badge + buttons live in an actions group (like zone rows) so the
             // height and delete buttons sit in a fixed right-hand column, no
             // matter the receiver name's length or whether a badge is shown.
@@ -4207,7 +4210,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 + `<span title="${escHtml(r.entity_id)}"${off ? ' style="color:#d32f2f"' : ''}>${escHtml(label)}</span>`
                 + `<span class="bps-zone-actions">`
                 + hBadge
-                + `<button class="bps-icon-btn" title="Set mount height (m)" data-type="recheight" data-id="${escHtml(r.entity_id)}">${rulerSvg}</button>`
                 + `<button class="bps-icon-btn" title="Remove receiver" data-type="removerec" data-id="${escHtml(r.entity_id)}">${trashSvg}</button>`
                 + `</span></li>`;
         };
@@ -4231,7 +4233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 + `<input type="color" class="bps-zone-swatch${uncolored ? ' bps-swatch-off' : ''}" data-type="zonecolor" data-id="${escHtml(zoneDomId)}" value="${colorToHex(zoneColor)}" title="Pick zone colour">`
                 + `<button class="bps-icon-btn" title="${uncolored ? 'Add colour' : 'Remove colour'}" data-type="zonetogglecolor" data-id="${escHtml(zoneDomId)}">${uncolored ? colorOnSvg : colorOffSvg}</button>`
                 + `<button class="bps-icon-btn bps-nogo-btn${noGo ? ' bps-nogo-on' : ''}" title="${noGo ? 'Unmark no-go zone' : 'Mark as no-go (dead space — nothing can be here)'}" data-type="zonetogglenogo" data-id="${escHtml(zoneDomId)}">${noGoSvg}</button>`
-                + `<button class="bps-icon-btn${linkCount ? ' bps-links-on' : ''}" title="Link HA area, media players and presence sensors" data-type="zonelinks" data-id="${escHtml(zoneDomId)}">${linkSvg}</button>`
+                + `<button class="bps-icon-btn${linkCount ? ' bps-links-on' : ''}" title="Link HA area, media players, presence sensors and lights" data-type="zonelinks" data-id="${escHtml(zoneDomId)}">${linkSvg}</button>`
                 + `<button class="bps-icon-btn" title="Edit zone" data-type="editzone" data-id="${escHtml(zoneDomId)}">${pencilSvg}</button>`
                 + `<button class="bps-icon-btn" title="Remove zone" data-type="removezone" data-id="${escHtml(zoneDomId)}">${trashSvg}</button>`
                 + '</span>';
@@ -5247,6 +5249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById("setFollowMe").checked = !!setDraft.features.follow_me;
         document.getElementById("setSuggestions").checked = !!setDraft.features.suggestions;
         document.getElementById("setHistory").checked = setDraft.features.history !== false;
+        document.getElementById("setAutoDistance").checked = setDraft.features.auto_distance !== false;
         document.getElementById("setAllUsers").checked = !!(setDraft.access || {}).all_users;
         document.getElementById("setAllUsers").disabled = !bpsAccess.is_admin;
         document.getElementById("setTapPath").value = setDraft.notify.tap_path || "";
@@ -5259,7 +5262,60 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderPersons();
         renderFollowYaml();
         setMarkDirty(false);
+        loadDistance();
     }
+
+    // Bermuda's "Distance to <receiver>" sensors per device (created turned off)
+    async function loadDistance() {
+        const host = document.getElementById("setDistance");
+        try {
+            const res = await bpsFetch("/api/bps/distance_sensors");
+            if (!res.ok) throw new Error(res.status);
+            renderDistance(await res.json());
+        } catch (e) {
+            host.innerHTML = `<p class="bps-links-hint">${escHtml(bpsTr("Could not read Bermuda's devices."))}</p>`;
+        }
+    }
+
+    function renderDistance(data) {
+        const host = document.getElementById("setDistance");
+        if (!data.bermuda) {
+            host.innerHTML = `<p class="bps-links-hint">${escHtml(bpsTr("Bermuda is not installed. BPS gets its distances from Bermuda; install it from HACS first."))}</p>`;
+            return;
+        }
+        if (!data.devices.length) {
+            host.innerHTML = `<p class="bps-links-hint">${escHtml(bpsTr("Bermuda doesn't track any device yet. Add your phone, watch or tag in Bermuda first (see the wiki page Add a phone or watch)."))}</p>`;
+            return;
+        }
+        host.innerHTML = data.devices.map(d => {
+            const all = d.off_integration === 0;
+            const tag = `<span class="bps-links-tag${all ? " bps-set-active" : ""}">${escHtml(bpsTr("{} of {} on", d.on, d.total))}</span>`;
+            const user = d.off_user ? ` <span class="bps-links-hint">${escHtml(bpsTr("{} turned off by you", d.off_user))}</span>` : "";
+            const btn = all ? "" : ` <button type="button" class="bps-btn bps-btn-primary bps-dist-on" data-dist-on="${escHtml(d.device_id)}">${escHtml(bpsTr("Turn on {}", d.off_integration))}</button>`;
+            return `<div class="bps-dist-row"><span class="bps-dist-name">${escHtml(d.name)}</span>${tag}${user}${btn}</div>`;
+        }).join("");
+    }
+
+    document.getElementById("setDistance").addEventListener("click", async (ev) => {
+        const btn = ev.target.closest("[data-dist-on]");
+        if (!btn) return;
+        btn.disabled = true;
+        try {
+            const res = await bpsFetch("/api/bps/distance_sensors", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ device_id: btn.getAttribute("data-dist-on") }),
+            });
+            if (!res.ok) throw new Error(res.status);
+            const data = await res.json();
+            renderDistance(data);
+            bpsToast(bpsTr("Turned on {} distance sensors. Home Assistant reloads Bermuda in about 30 seconds; then the device shows up under Map & Setup → Tracking.", data.enabled));
+            setTimeout(loadDistance, 35000);
+        } catch (e) {
+            btn.disabled = false;
+            bpsToast(bpsTr("Could not turn the sensors on."));
+        }
+    });
 
     async function refreshSettingsStatus() {
         try {
@@ -5366,7 +5422,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderPersons();
         setMarkDirty();
     });
-    ["setFollowMe", "setSuggestions", "setHistory", "setAllUsers", "setTapPath", "setDwell", "setStill", "setMoved", "setMoveM", "setStale"]
+    ["setFollowMe", "setSuggestions", "setHistory", "setAutoDistance", "setAllUsers", "setTapPath", "setDwell", "setStill", "setMoved", "setMoveM", "setStale"]
         .forEach(id => document.getElementById(id).addEventListener("input", () => setMarkDirty()));
 
     document.getElementById("setSave").addEventListener("click", async () => {
@@ -5374,6 +5430,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setDraft.features.follow_me = document.getElementById("setFollowMe").checked;
         setDraft.features.suggestions = document.getElementById("setSuggestions").checked;
         setDraft.features.history = document.getElementById("setHistory").checked;
+        setDraft.features.auto_distance = document.getElementById("setAutoDistance").checked;
         setDraft.access = { all_users: document.getElementById("setAllUsers").checked };
         setDraft.notify.tap_path = document.getElementById("setTapPath").value.trim();
         setDraft.tracking = {

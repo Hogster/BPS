@@ -1,10 +1,28 @@
 ![BPS Logo](img/icon.png)
 # BLE Positioning System (BPS)
-A BLE positioning system for Home Assistant providing realtime, multi-device, floor plan tracking indoors. Dependent on the Bermuda component built by [@agittins](https://github.com/agittins).
+
+**See exactly where everyone is in your home: on your own floor plan, in real time.**
+
+![People moving on the floor plan in real time](img/screenshots/bps_tracking.gif)
+
+BPS turns the Bluetooth receivers you may already have (ESPHome proxies, Shelly relays) into an indoor positioning system for Home Assistant. Not just *which room*: the exact spot, the floor, and the zone, for every person and pet.
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Hogster&repository=BPS&category=Integration)
 
-Follow the discussion on [Home Assistant Community](https://community.home-assistant.io/t/bps-the-indoor-precise-tracking-system/843429)
+## Why BPS
+- **A position, not a guess.** Trilateration from several receivers puts each person on the map, in zones and sub-zones you draw yourself.
+- **Floors done right.** Knows which floor you are on, even when Bluetooth leaks through the ceiling.
+- **Calibrates itself.** The receivers measure each other and correct their own errors; a heat map shows where one more receiver helps most.
+- **Runs on any 64-bit Home Assistant**, Raspberry Pi and HA Green included. Everything stays local.
+- **Coming in 0.3.0 (beta now):** persons with several trackers, music that follows you between rooms, and suggestions that ask before changing a room's lights and learn your answers.
+
+## Get started
+1. **Hardware:** at least 3 Bluetooth receivers that hear each spot, and something Bluetooth on each person (phone, watch or tag). See the **[hardware guide](https://github.com/Hogster/BPS/wiki/Hardware)** for what to buy and where to put it.
+2. **Install [Bermuda](https://github.com/agittins/bermuda)** from HACS. BPS builds on its distance estimates.
+3. **Install BPS** from HACS with the button above, and restart Home Assistant. Then turn on Bermuda's *Distance to …* sensors for each device: from 0.3.0b2 with one click under *Settings → Bluetooth devices* in the BPS panel, before that by hand ([Installation](https://github.com/Hogster/BPS/wiki/Installation)). New to phones in Bermuda? See **[Add a phone or watch](https://github.com/Hogster/BPS/wiki/Add-a-phone-or-watch)**.
+4. **Open BPS in the sidebar:** upload a floor plan, place your receivers, set the scale and draw zones. The [wiki](https://github.com/Hogster/BPS/wiki/Initial-set%E2%80%90up) walks you through it.
+
+Questions and ideas: the [Home Assistant Community thread](https://community.home-assistant.io/t/bps-the-indoor-precise-tracking-system/843429) or [issues](https://github.com/Hogster/BPS/issues).
 
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
@@ -19,12 +37,6 @@ Follow the discussion on [Home Assistant Community](https://community.home-assis
 [![Discord][discord-shield]][discord]
 [![Community Forum][forum-shield]][forum]
 
-> ### 🎉 BPS now runs on Raspberry Pi — and on every supported Home Assistant install
-> The long-standing blocker ([#1](https://github.com/Hogster/BPS/issues/1)) is gone. Home Assistant now
-> ships NumPy and SciPy itself, on every platform, so BPS installs straight from HACS on a
-> **Raspberry Pi 4/5, Home Assistant Green, Yellow, ODROID** and of course x86-64 machines —
-> no compiling, no workarounds. See [Platform support](#platform-support).
-
 **Enjoying BPS?** It's built and maintained in my spare time. If it helps you find your keys, your cat or your kids, a coffee keeps the updates coming ☕
 
 <a href="https://buymeacoffee.com/hogster"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="45"></a>
@@ -38,26 +50,6 @@ Maxi took BPS far beyond the original feature set — polygon zones, auto-calibr
 This upstream release incorporates that work with gratitude. If you benefit from these improvements, please star their fork and say thanks: [maxi1134/BPS-improved](https://github.com/maxi1134/BPS-improved).
 
 BPS also continues to build on [@agittins](https://github.com/agittins)' excellent [Bermuda](https://github.com/agittins/bermuda) integration.
-
-## What it does
-
-BPS uses Bermuda's near-realtime distance estimates to ESPHome `bluetooth_proxy` devices and trilaterates a precise indoor position on your floor plan.
-
-![Tracking](img/screenshots/bps_tracking.gif)
-
-With receivers placed and zones defined, BPS can show:
-- Exactly where a device is on a floor plan
-- Which floor a device is on (great for floor-change automations)
-- Which zone (Kitchen, Bedroom, …) a device is in
-
-## What you need
-
-- Home Assistant
-- [Bermuda](https://github.com/agittins/bermuda) tracking at least one Bluetooth device
-- At least three ESPHome `bluetooth_proxy` devices (or compatible proxies such as Shelly Plus)
-
-Install BPS via HACS:
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Hogster&repository=BPS&category=Integration)
 
 ## Documentation and help — the Wiki
 
@@ -668,8 +660,8 @@ the map is flat. That mismatch costs accuracy twice:
   the **nearest** receivers, exactly the ones the solver trusts most.
 
 Setting a receiver's **mount height** fixes both. Enter it when placing the
-receiver, or later via the **ruler button on its sidebar row** (the current
-value shows as a badge; leave it empty to keep the old flat behaviour):
+receiver, or later with the **Height?** button on its row under *Zones & Receivers*
+(it then shows the value, e.g. *2.4 m*; leave it empty to keep the old flat behaviour):
 
 - Calibration judges each pair against the **true 3D distance** — heights
   apply when **both** receivers in a pair have one. The Receiver-distances
