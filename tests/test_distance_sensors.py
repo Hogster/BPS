@@ -1,5 +1,5 @@
 """Bermuda distance sensors: which to list and which to turn on."""
-from custom_components.bps.distance_sensors import is_distance, summarize, to_enable
+from bps.distance_sensors import is_distance, summarize, to_enable
 
 
 def ent(eid, dev, uid_suffix="_range", disabled=None, platform="bermuda", mac=None):
