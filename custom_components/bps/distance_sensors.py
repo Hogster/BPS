@@ -135,12 +135,16 @@ async def async_setup_auto(hass, is_on):
     every new Bermuda entity. ``is_on`` reads the setting each time. Returns
     a stop function.
     """
+    from homeassistant.core import callback
     from homeassistant.helpers import entity_registry as er
 
     def _sweep():
         if is_on():
             enable(hass, to_enable(_entries(hass), only_active=True))
 
+    # @callback: run in the event loop. A plain function is run in a worker
+    # thread, where updating the entity registry is refused.
+    @callback
     def _on_registry(event):
         data = event.data
         if data.get("action") not in ("create", "update"):

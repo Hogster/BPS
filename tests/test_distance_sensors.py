@@ -54,3 +54,22 @@ def test_automatic_mode_only_touches_tracked_devices():
 def test_nothing_to_do():
     assert to_enable([], device_id="x") == []
     assert summarize([]) == []
+
+
+def test_registry_listener_runs_in_the_event_loop(monkeypatch):
+    """HA runs a listener without @callback in a worker thread, where the
+    entity registry refuses updates (0.3.0b2: new receivers stayed off)."""
+    import asyncio
+    import types
+    import homeassistant.helpers.entity_registry as er
+    from bps import distance_sensors
+
+    monkeypatch.setattr(er, "EVENT_ENTITY_REGISTRY_UPDATED", "entity_registry_updated", raising=False)
+    seen = {}
+    hass = types.SimpleNamespace(bus=types.SimpleNamespace(
+        async_listen=lambda event, fn: seen.update(event=event, fn=fn) or (lambda: None)))
+
+    asyncio.run(distance_sensors.async_setup_auto(hass, lambda: False))
+
+    assert seen["event"] == "entity_registry_updated"
+    assert getattr(seen["fn"], "_hass_callback", False) is True

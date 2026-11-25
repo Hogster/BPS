@@ -14,12 +14,12 @@ BPS turns the Bluetooth receivers you may already have (ESPHome proxies, Shelly 
 - **Floors done right.** Knows which floor you are on, even when Bluetooth leaks through the ceiling.
 - **Calibrates itself.** The receivers measure each other and correct their own errors; a heat map shows where one more receiver helps most.
 - **Runs on any 64-bit Home Assistant**, Raspberry Pi and HA Green included. Everything stays local.
-- **Coming in 0.3.0 (beta now):** persons with several trackers, music that follows you between rooms, and suggestions that ask before changing a room's lights and learn your answers.
+- **Coming in 0.3.0 (beta now):** persons with several trackers, music that follows you between rooms, and suggestions that ask before changing a room's lights and learn your answers. To try it: Marketplace → BPS → ⋮ → *Include pre-releases*.
 
 ## Get started
 1. **Hardware:** at least 3 Bluetooth receivers that hear each spot, and something Bluetooth on each person (phone, watch or tag). See the **[hardware guide](https://github.com/Hogster/BPS/wiki/Hardware)** for what to buy and where to put it.
-2. **Install [Bermuda](https://github.com/agittins/bermuda)** from HACS. BPS builds on its distance estimates.
-3. **Install BPS** from HACS with the button above, and restart Home Assistant. Then turn on Bermuda's *Distance to …* sensors for each device: from 0.3.0b2 with one click under *Settings → Bluetooth devices* in the BPS panel, before that by hand ([Installation](https://github.com/Hogster/BPS/wiki/Installation)). New to phones in Bermuda? See **[Add a phone or watch](https://github.com/Hogster/BPS/wiki/Add-a-phone-or-watch)**.
+2. **Install [Bermuda](https://github.com/agittins/bermuda)** from the Marketplace (formerly HACS). BPS builds on its distance estimates.
+3. **Install BPS** from the Marketplace with the button above, and restart Home Assistant. Then turn on Bermuda's *Distance to …* sensors for each device: from 0.3.0b2 with one click under *Settings → Bluetooth devices* in the BPS panel, before that by hand ([Installation](https://github.com/Hogster/BPS/wiki/Installation)). New to phones in Bermuda? See **[Add a phone or watch](https://github.com/Hogster/BPS/wiki/Add-a-phone-or-watch)**.
 4. **Open BPS in the sidebar:** upload a floor plan, place your receivers, set the scale and draw zones. The [wiki](https://github.com/Hogster/BPS/wiki/Initial-set%E2%80%90up) walks you through it.
 
 Questions and ideas: the [Home Assistant Community thread](https://community.home-assistant.io/t/bps-the-indoor-precise-tracking-system/843429) or [issues](https://github.com/Hogster/BPS/issues).

@@ -22,5 +22,5 @@
         "scipy>=1.16.0",
         "shapely>=2.0.2"
     ],
-    "version": "0.3.0b2"
+    "version": "0.3.0b3"
 }
