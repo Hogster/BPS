@@ -38,7 +38,7 @@ CHARGING_STATES = ("charging", "full", "on", "true")
 TICK_S = 5
 
 DEFAULT_SETTINGS = {
-    "features": {"follow_me": False, "suggestions": False, "history": True},
+    "features": {"follow_me": False, "suggestions": False, "history": True, "auto_distance": True},
     "notify": {"tap_path": "/lovelace/0"},
     "tracking": {"dwell_s": 15, "still_min": 10, "moved_recent_s": 120,
                  "move_m": 1.5, "stale_s": 120},

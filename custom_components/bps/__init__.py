@@ -55,6 +55,7 @@ from .zone_links import build_zone_links, collect_candidates
 from .placement import analyze as analyze_placement
 from .usage import async_setup_usage
 from .engine import async_setup_engine, register_services
+from . import distance_sensors
 from .learned import apply_pref_action, build_learned, scan_log
 from . import plan as sugg_plan
 from .access import can_configure, denied, user_access
@@ -1544,6 +1545,7 @@ async def async_setup(hass, config):
             hass.http.register_view(BPSPlacementAPI())
             hass.http.register_view(BPSAccessAPI())
             hass.http.register_view(BPSLearnedAPI())
+            hass.http.register_view(BPSDistanceSensorsAPI())
             hass.data["bps_views_registered"] = True
 
         config_path = hass.config.path()
@@ -1632,6 +1634,16 @@ async def async_setup(hass, config):
         except Exception as e:
             _LOGGER.exception("BPS home engine (follow me, suggestions) failed to start: %s", e)
 
+        # Keep tracked devices' Bermuda distance sensors on as receivers are added
+        old_distance_stop = hass.data.get(DOMAIN, {}).pop("distance_stop", None)
+        if old_distance_stop:
+            old_distance_stop()
+        try:
+            hass.data.setdefault(DOMAIN, {})["distance_stop"] = await distance_sensors.async_setup_auto(
+                hass, lambda: merge_settings(get_settings_raw(hass))["features"].get("auto_distance", True))
+        except Exception as e:
+            _LOGGER.warning("Automatic distance sensors disabled: %s", e)
+
         jinja_code = """
         {{
             states.sensor
@@ -1662,6 +1674,9 @@ async def async_setup(hass, config):
             engine_stop = hass.data.get(DOMAIN, {}).pop("engine_stop", None)
             if engine_stop:
                 await engine_stop()
+            distance_stop = hass.data.get(DOMAIN, {}).pop("distance_stop", None)
+            if distance_stop:
+                distance_stop()
             await async_shutdown_calibration(hass)
 
         hass.bus.async_listen_once("homeassistant_stop", handle_homeassistant_stop)
@@ -2207,6 +2222,36 @@ class BPSSettingsAPI(HomeAssistantView):
             data["access"] = merge_settings(get_settings_raw(hass))["access"]
         await save_settings(hass, data)
         return web.json_response(_settings_payload(hass))
+
+
+class BPSDistanceSensorsAPI(HomeAssistantView):
+    """Settings tab: Bermuda's "Distance to <receiver>" sensors per device.
+
+    GET lists every Bermuda device with how many distance sensors are on.
+    POST {"device_id": ...} turns that device's Bermuda-disabled ones on.
+    """
+    url = "/api/bps/distance_sensors"
+    name = "api:bps:distance_sensors"
+    requires_auth = True
+
+    async def get(self, request):
+        hass = request.app["hass"]
+        if not can_configure(hass, request):
+            return denied()
+        return web.json_response(distance_sensors.status(hass))
+
+    async def post(self, request):
+        hass = request.app["hass"]
+        if not can_configure(hass, request):
+            return denied()
+        try:
+            device_id = str((await request.json()).get("device_id") or "")
+        except Exception:
+            return web.Response(status=400, text="Bad request")
+        if not device_id:
+            return web.Response(status=400, text="device_id is required")
+        done = distance_sensors.enable_device(hass, device_id)
+        return web.json_response({**distance_sensors.status(hass), "enabled": done})
 
 
 class BPSAccessAPI(HomeAssistantView):

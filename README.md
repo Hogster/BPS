@@ -668,8 +668,8 @@ the map is flat. That mismatch costs accuracy twice:
   the **nearest** receivers, exactly the ones the solver trusts most.
 
 Setting a receiver's **mount height** fixes both. Enter it when placing the
-receiver, or later via the **ruler button on its sidebar row** (the current
-value shows as a badge; leave it empty to keep the old flat behaviour):
+receiver, or later with the **Height?** button on its row under *Zones & Receivers*
+(it then shows the value, e.g. *2.4 m*; leave it empty to keep the old flat behaviour):
 
 - Calibration judges each pair against the **true 3D distance** — heights
   apply when **both** receivers in a pair have one. The Receiver-distances
