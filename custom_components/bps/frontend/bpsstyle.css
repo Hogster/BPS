@@ -3459,3 +3459,38 @@ input[type="checkbox"] { accent-color: hsl(var(--sidebar-primary)); }
 .bps-dist-row:last-child { border-bottom: none; }
 .bps-dist-name { font-weight: 600; flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
 .bps-dist-on { height: 26px; padding: 0 10px; font-size: 12px; }
+
+/* "Add a phone, watch or tag" guide */
+.bps-add-dev-btn { margin: 10px 0 6px; }
+.bps-modal.bps-wiz { width: min(520px, calc(100% - 32px)); max-height: calc(100vh - 48px); overflow: auto; }
+.bps-wiz h4 { margin: 0 0 4px; font-size: 16px; }
+.bps-wiz-step { font-size: 12px; color: hsl(var(--muted-foreground)); margin-bottom: 12px; }
+.bps-wiz-body { font-size: 14px; line-height: 1.5; margin-bottom: 18px; }
+.bps-wiz-body p { margin: 0 0 10px; }
+.bps-wiz-body ol, .bps-wiz-body ul { padding-left: 22px; margin: 4px 0 10px; }
+.bps-wiz-body ol { list-style: decimal; }
+.bps-wiz-body ul { list-style: disc; }
+.bps-wiz-body li { margin: 2px 0; }
+.bps-wiz-body a { color: hsl(var(--primary)); text-decoration: underline; }
+.bps-wiz-body h5 { margin: 14px 0 4px; font-size: 14px; }
+.bps-wiz-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bps-wiz-choice { text-align: left; padding: 12px; border: 1px solid hsl(var(--border)); border-radius: 10px;
+    background: hsl(var(--background)); color: hsl(var(--foreground)); cursor: pointer; font-size: 14px; }
+.bps-wiz-choice:hover { border-color: hsl(var(--primary)); }
+.bps-wiz-choice b { display: block; margin-bottom: 2px; }
+.bps-wiz-choice span { font-size: 12px; color: hsl(var(--muted-foreground)); }
+.bps-wiz-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid hsl(var(--border)); }
+.bps-wiz-row:last-child { border-bottom: none; }
+.bps-wiz-row .bps-dist-name { flex: 1 1 160px; }
+.bps-wiz-bar { height: 6px; border-radius: 3px; background: hsl(var(--border)); overflow: hidden; margin: 10px 0; }
+.bps-wiz-bar > div { height: 100%; background: hsl(var(--primary)); transition: width .4s linear; }
+.bps-wiz-ok { color: #2e9d5b; font-weight: 600; }
+@media (max-width: 480px) { .bps-wiz-choices { grid-template-columns: 1fr; } }
+
+/* Accuracy card (truth marks) */
+.bps-acc-table { border-collapse: collapse; margin: 6px 0; font-size: 0.92em; }
+.bps-acc-table th, .bps-acc-table td { padding: 4px 10px 4px 0; text-align: left; border-bottom: 1px solid var(--bps-border, rgba(127,127,127,0.25)); }
+.bps-acc-table th { font-weight: 600; opacity: 0.8; }
+.bps-acc-best td { font-weight: 700; }
+.bps-track-mark { opacity: 0.7; }
+.bps-track-mark:hover { color: inherit; }

@@ -4,6 +4,11 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity import DeviceInfo
 import logging
+from datetime import timedelta
+
+from homeassistant.helpers.event import async_track_time_interval
+
+from . import bermuda_source
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,6 +115,11 @@ def get_filtered_entities(hass):
         if entry is None or entry.platform != "bermuda":
             continue
         filtered.add(eid.replace("sensor.", "").split("_distance_to_")[0])
+    # Devices Bermuda tracks, read straight from Bermuda (bermuda_source.py):
+    # these need no distance sensors at all.
+    direct = bermuda_source.async_tracked(hass)
+    if direct:
+        filtered.update(direct)
     return list(filtered)
 
 class CustomDistanceSensor(SensorEntity):
@@ -260,7 +270,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     # Remove stale BPS registry entries that are no longer expected.
     entity_registry = er.async_get(hass)
-    if expected_entity_ids:
+    # Bermuda has the read API but isn't set up yet (HA still starting): the
+    # devices it tracks are unknown for now, so don't call their sensors stale.
+    bermuda_pending = bermuda_source.has_api() and not bermuda_source.available(hass)
+    if expected_entity_ids and not bermuda_pending:
         stale_bps_ids = [
             entry.entity_id
             for entry in entity_registry.entities.values()
@@ -314,6 +327,26 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     if old_unsub:
         old_unsub()
     hass.data["bps_state_listener_unsub"] = hass.bus.async_listen("state_changed", state_changed_listener)
+
+    @callback
+    def direct_tracked_check(_now):
+        """A device newly tracked in Bermuda, read through its API: there is
+        no new distance sensor to announce it, so look every 30 seconds."""
+        sensors_cache = hass.data.get("bps_sensors")
+        if sensors_cache is None or not bermuda_source.available(hass):
+            return
+        new_sensors = []
+        for entity in bermuda_source.async_tracked(hass) or []:
+            ensure_sensors_for_entity(hass, entity, sensors_cache, new_sensors)
+        if new_sensors:
+            async_add_entities(new_sensors, update_before_add=True)
+            normalize_bps_registry_entity_ids_from_cache(hass)
+
+    old_unsub = hass.data.pop("bps_direct_tracked_unsub", None)
+    if old_unsub:
+        old_unsub()
+    hass.data["bps_direct_tracked_unsub"] = async_track_time_interval(
+        hass, direct_tracked_check, timedelta(seconds=30))
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):

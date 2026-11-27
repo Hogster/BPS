@@ -791,6 +791,37 @@ document.addEventListener('DOMContentLoaded', async () => {
         return pollTrackActive ? base / Math.pow(view.zoom || 1, 2 / 3) : base;
     }
 
+    // "It is actually here" (truth mark): 📍 on a tracked device's row, then a
+    // click on the map where it really is. The backend keeps the next 45 s of
+    // its positioning and measures each method against the click (truth.py).
+    let truthMarkFor = null;
+    function startTruthMark(entKey) {
+        if (!SelMapName || !img.naturalWidth) {
+            bpsToast(bpsTr("Open the floor the device is on first."));
+            return;
+        }
+        truthMarkFor = entKey;
+        canvas.style.cursor = "crosshair";
+        bpsToast(bpsTr("Click where {} really is.", entKey));
+    }
+    canvas.addEventListener("click", async (event) => {
+        if (!truthMarkFor) return;
+        const entKey = truthMarkFor;
+        truthMarkFor = null;
+        canvas.style.cursor = "";
+        const pos = zoneMousePos(event);
+        try {
+            const r = await bpsFetch("/api/bps/truth", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "mark", entity: entKey, floor: SelMapName, x: pos.x, y: pos.y }),
+            });
+            if (!r.ok) throw new Error(await r.text());
+            bpsToast(bpsTr("Marked. Keep {} still for 45 seconds.", entKey));
+        } catch (e) {
+            bpsToast(bpsTr("Could not save the mark: {}", e.message || e));
+        }
+    }, true);
+
     function drawTrackOverlay() {
         if (!pollTrackActive || lastTracks.size === 0) return;
         // A focus on a device that's gone (removed/stale) reverts to showing all.
@@ -1815,8 +1846,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                 remove.textContent = "×";
                 remove.title = "Stop tracking this device";
                 remove.addEventListener("click", () => removeTrackedDevice(entKey));
+                const mark = document.createElement("button");
+                mark.type = "button";
+                mark.className = "bps-track-remove bps-track-mark";
+                mark.textContent = "📍";
+                mark.title = "It is actually here: click where this device really is";
+                mark.addEventListener("click", () => startTruthMark(entKey));
                 row.appendChild(swatch);
                 row.appendChild(name);
+                row.appendChild(mark);
                 row.appendChild(remove);
                 legend.appendChild(row);
             });
@@ -5287,9 +5325,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             host.innerHTML = `<p class="bps-links-hint">${escHtml(bpsTr("Bermuda doesn't track any device yet. Add your phone, watch or tag in Bermuda first (see the wiki page Add a phone or watch)."))}</p>`;
             return;
         }
-        host.innerHTML = data.devices.map(d => {
-            const all = d.off_integration === 0;
-            const tag = `<span class="bps-links-tag${all ? " bps-set-active" : ""}">${escHtml(bpsTr("{} of {} on", d.on, d.total))}</span>`;
+        const direct = data.parked
+            ? `<p class="bps-links-hint">${escHtml(bpsTr("BPS reads the distances straight from Bermuda and has turned these sensors off to save load. If that stops working, BPS turns them back on by itself."))}</p>`
+            : data.direct
+            ? `<p class="bps-links-hint">${escHtml(bpsTr("BPS reads the distances straight from Bermuda, so these sensors aren't needed. BPS turns them off once that has worked for 10 minutes."))}</p>`
+            : "";
+        host.innerHTML = direct + data.devices.map(d => {
+            const all = d.off_integration === 0 || data.direct;
+            const tag = `<span class="bps-links-tag${all && !data.direct ? " bps-set-active" : ""}">${escHtml(bpsTr("{} of {} on", d.on, d.total))}</span>`;
             const user = d.off_user ? ` <span class="bps-links-hint">${escHtml(bpsTr("{} turned off by you", d.off_user))}</span>` : "";
             const btn = all ? "" : ` <button type="button" class="bps-btn bps-btn-primary bps-dist-on" data-dist-on="${escHtml(d.device_id)}">${escHtml(bpsTr("Turn on {}", d.off_integration))}</button>`;
             return `<div class="bps-dist-row"><span class="bps-dist-name">${escHtml(d.name)}</span>${tag}${user}${btn}</div>`;
@@ -5316,6 +5359,232 @@ document.addEventListener('DOMContentLoaded', async () => {
             bpsToast(bpsTr("Could not turn the sensors on."));
         }
     });
+
+    // ---- "Add a phone, watch or tag" guide -----------------------------------
+    // Steps: what to add → make it recognisable → find it (hold it against a
+    // receiver) → add it to Bermuda → turn on its distance sensors → link it
+    // to a person. The backend is /api/bps/add_device (add_device.py).
+    document.getElementById("setAddDevice").addEventListener("click", () => addDeviceWizard());
+
+    function addDeviceWizard() {
+        const overlay = document.createElement("div");
+        overlay.className = "bps-modal-overlay";
+        const dlg = document.createElement("div");
+        dlg.className = "bps-modal bps-wiz";
+        overlay.appendChild(dlg);
+        document.body.appendChild(overlay);
+        const st = { kind: null, info: null, dev: null, timer: null, closed: false };
+        const close = () => {
+            st.closed = true;
+            clearTimeout(st.timer);
+            overlay.remove();
+            loadDistance();
+        };
+        overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+        const T = bpsTr;
+        const KIND_LABEL = { private_ble: T("Apple device (IRK)"), ibeacon: T("Beacon"), device: T("Fixed address"), random: T("Changing address") };
+
+        function show(step, title, body, actions) {
+            dlg.innerHTML = `<div class="bps-wiz-step">${escHtml(T("Step {} of 5", step))}</div>`
+                + `<h4>${escHtml(title)}</h4><div class="bps-wiz-body">${body}</div>`
+                + `<div class="bps-modal-actions">${actions || ""}`
+                + `<button type="button" class="bps-btn bps-btn-outline" data-w="close">${escHtml(T("Close"))}</button></div>`;
+        }
+        dlg.addEventListener("click", (e) => {
+            const b = e.target.closest("[data-w]");
+            if (!b) return;
+            const w = b.getAttribute("data-w"), v = b.getAttribute("data-v");
+            if (w === "close") close();
+            else if (w === "kind") { st.kind = v; recognise(); }
+            else if (w === "back") pick();
+            else if (w === "recheck") recognise();
+            else if (w === "find") find();
+            else if (w === "start") scan();
+            else if (w === "android") { const a = st.info.android.find(x => x.value === v); choose({ value: v, address: v.toLowerCase(), name: a ? a.name : v, kind: "ibeacon", tracked: (st.info.configured || []).some(c => c.toLowerCase() === v.toLowerCase()) }); }
+            else if (w === "this") choose(st.found[Number(v)]);
+            else if (w === "add") addToBermuda(b);
+            else if (w === "link") link(b);
+        });
+
+        async function info() {
+            const res = await bpsFetch("/api/bps/add_device");
+            if (!res.ok) throw new Error(res.status);
+            st.info = await res.json();
+            return st.info;
+        }
+
+        // 1. What to add
+        function pick() {
+            const c = (k, t, d) => `<button type="button" class="bps-wiz-choice" data-w="kind" data-v="${k}"><b>${escHtml(t)}</b><span>${escHtml(d)}</span></button>`;
+            show(1, T("Add a phone, watch or tag"),
+                `<p>${escHtml(T("BPS can only place what Bermuda tracks. What do you want to add?"))}</p><div class="bps-wiz-choices">`
+                + c("android", T("Android phone"), T("Companion app, 2 min"))
+                + c("apple", T("iPhone or iPad"), T("Needs its IRK key, 10 min once"))
+                + c("watch", T("Apple Watch"), T("Needs its own IRK key"))
+                + c("tag", T("Tag or other"), T("Key ring, collar, other watches"))
+                + `</div>`);
+        }
+
+        // 2. Make it recognisable
+        async function recognise() {
+            show(2, T("Make it recognisable"), `<p>${escHtml(T("Checking…"))}</p>`);
+            let i;
+            try { i = await info(); } catch (e) { show(2, T("Make it recognisable"), `<p>${escHtml(T("Could not read Bermuda's devices."))}</p>`); return; }
+            if (!i.bermuda) {
+                show(2, T("Bermuda is missing"), `<p>${escHtml(T("Bermuda is not installed. BPS gets its distances from Bermuda; install it from HACS first."))}</p>`);
+                return;
+            }
+            const back = `<button type="button" class="bps-btn bps-btn-outline" data-w="back">${escHtml(T("Back"))}</button>`;
+            const findBtn = `<button type="button" class="bps-btn bps-btn-primary" data-w="find">${escHtml(T("Find my device"))}</button>`;
+            if (st.kind === "android") {
+                const on = i.android.filter(a => a.on && a.value);
+                const rows = i.android.map(a => `<div class="bps-wiz-row"><span class="bps-dist-name">${escHtml(a.name)}</span>`
+                    + (a.on && a.value ? `<button type="button" class="bps-btn bps-btn-primary bps-dist-on" data-w="android" data-v="${escHtml(a.value)}">${escHtml(T("This is mine"))}</button>`
+                        : `<span class="bps-links-hint">${escHtml(T("Transmitter off"))}</span>`) + `</div>`).join("");
+                show(2, T("Android phone"),
+                    `<p>${escHtml(T("In the Home Assistant Companion app on the phone: Settings → Companion app → Manage sensors → BLE transmitter, and turn it on."))}</p>`
+                    + (rows ? `<p>${escHtml(T("Phones with the Companion app:"))}</p>${rows}` : `<p class="bps-links-hint">${escHtml(T("No phone with the BLE transmitter sensor yet."))}</p>`)
+                    + (on.length ? "" : `<p class="bps-links-hint">${escHtml(T("Turned it on? Press Check again."))}</p>`),
+                    back + `<button type="button" class="bps-btn bps-btn-outline" data-w="recheck">${escHtml(T("Check again"))}</button>` + findBtn);
+            } else if (st.kind === "apple" || st.kind === "watch") {
+                const pbd = i.private_ble.map(p => `<li>${escHtml(p.title)}</li>`).join("");
+                show(2, st.kind === "watch" ? T("Apple Watch") : T("iPhone or iPad"),
+                    `<p>${escHtml(T("Apple devices change their Bluetooth address all the time. Home Assistant can follow them with the device's IRK key, in the Private BLE Device integration; Bermuda then tracks them by itself."))}</p>`
+                    + (pbd ? `<p>${escHtml(T("Already added in Private BLE Device:"))}</p><ul>${pbd}</ul><p>${escHtml(T("Not sure which one is this device? Find it."))}</p>`
+                        : `<p class="bps-links-hint">${escHtml(T("No Private BLE Device yet."))}</p>`)
+                    + `<h5>${escHtml(T("Adding a new Apple device"))}</h5><ol><li>${escHtml(T("Get the IRK: the wiki page Add a phone or watch shows two ways (a spare ESP32, or a Mac)."))}</li>`
+                    + `<li>${escHtml(T("Settings → Devices & services → Add integration → Private BLE Device, and paste it."))}</li></ol>`
+                    + `<p><a href="https://github.com/Hogster/BPS/wiki/Add-a-phone-or-watch" target="_blank" rel="noopener">${escHtml(T("Open the wiki page"))}</a> · `
+                    + `<a href="https://my.home-assistant.io/redirect/config_flow_start/?domain=private_ble_device" target="_blank" rel="noopener">${escHtml(T("Add Private BLE Device"))}</a></p>`,
+                    back + `<button type="button" class="bps-btn bps-btn-outline" data-w="recheck">${escHtml(T("Check again"))}</button>` + findBtn);
+            } else find();
+        }
+
+        // 3. Find it: hold it against a receiver
+        function find() {
+            show(3, T("Find your device"),
+                `<p>${escHtml(T("Keep the device at least an arm's length from your receivers and press Start. Then hold it right against one of them for about 30 seconds."))}</p>`
+                + `<p class="bps-links-hint">${escHtml(T("Phones: unlock the screen now and then, so it keeps sending."))}</p>`,
+                `<button type="button" class="bps-btn bps-btn-primary" data-w="start">${escHtml(T("Start"))}</button>`);
+        }
+        async function scan() {
+            show(3, T("Find your device"), `<p>${escHtml(T("Starting…"))}</p>`);
+            try {
+                const r = await bpsFetch("/api/bps/add_device", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start" }) });
+                if (!r.ok) throw new Error(await r.text());
+            } catch (e) { show(3, T("Find your device"), `<p>${escHtml(T("Could not read Bermuda's devices."))}</p>`, `<button type="button" class="bps-btn bps-btn-primary" data-w="start">${escHtml(T("Try again"))}</button>`); return; }
+            const t0 = Date.now(), total = 30000;
+            st.found = [];
+            const tick = async () => {
+                if (st.closed) return;
+                try {
+                    const r = await bpsFetch("/api/bps/add_device", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "near" }) });
+                    if (r.ok) st.found = (await r.json()).found || [];
+                } catch (e) { /* keep trying */ }
+                if (st.closed) return;
+                const left = Math.max(0, total - (Date.now() - t0));
+                const rows = st.found.map((d, i) => {
+                    const n = d.nearest || {};
+                    const where = T("{} m from {}", n.distance, n.receiver) + (d.was != null ? " " + T("(was {} m)", d.was) : "");
+                    const usable = d.kind !== "random";
+                    return `<div class="bps-wiz-row"><span class="bps-dist-name">${escHtml(d.name)}<br><span class="bps-links-hint">${escHtml(KIND_LABEL[d.kind] || d.kind)} · ${escHtml(where)}</span></span>`
+                        + (usable ? `<button type="button" class="bps-btn bps-btn-primary bps-dist-on" data-w="this" data-v="${i}">${escHtml(T("This one"))}</button>`
+                            : `<span class="bps-links-hint">${escHtml(T("Changing address: set up its IRK first (step 2)."))}</span>`) + `</div>`;
+                }).join("");
+                show(3, T("Find your device"),
+                    `<p>${escHtml(left ? T("Keep holding it against the receiver…") : T("Done looking."))}</p>`
+                    + `<div class="bps-wiz-bar"><div style="width:${Math.round(100 * (1 - left / total))}%"></div></div>`
+                    + (rows || `<p class="bps-links-hint">${escHtml(left ? T("Nothing has come close yet.") : T("Nothing came close. Is the device on and near a receiver? Android: is the BLE transmitter on?"))}</p>`),
+                    left ? "" : `<button type="button" class="bps-btn bps-btn-primary" data-w="start">${escHtml(T("Try again"))}</button>`);
+                if (left) st.timer = setTimeout(tick, 3000);
+            };
+            st.timer = setTimeout(tick, 3000);
+        }
+
+        // 4. Add it to Bermuda
+        function choose(dev) {
+            clearTimeout(st.timer);
+            st.dev = dev;
+            if (dev.tracked) { sensors(); return; }
+            show(4, T("Add it to Bermuda"),
+                `<p>${escHtml(T("Bermuda doesn't track {} yet. BPS can add it for you: this adds {} to Bermuda's Configure → Select devices, and Bermuda restarts itself.", dev.name, dev.value))}</p>`,
+                `<button type="button" class="bps-btn bps-btn-primary" data-w="add">${escHtml(T("Add to Bermuda"))}</button>`);
+        }
+        async function addToBermuda(btn) {
+            btn.disabled = true;
+            try {
+                const r = await bpsFetch("/api/bps/add_device", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add", value: st.dev.value }) });
+                if (!r.ok) throw new Error(await r.text());
+                sensors();
+            } catch (e) {
+                btn.disabled = false;
+                bpsToast(T("Could not change Bermuda's settings: {}", e.message || e));
+            }
+        }
+
+        // 5a. Wait for Bermuda's distance sensors and turn them on
+        function sensors() {
+            const t0 = Date.now();
+            const poll = async () => {
+                if (st.closed) return;
+                let d = null, direct = false;
+                try {
+                    const r = await bpsFetch("/api/bps/distance_sensors");
+                    if (r.ok) {
+                        const j = await r.json();
+                        direct = !!j.direct;
+                        d = (j.devices || []).find(x => x.address === st.dev.address);
+                    }
+                } catch (e) { /* retry */ }
+                // BPS reads Bermuda directly: the sensors only need to exist (they name the device)
+                if (d && direct) { st.sensor = d; person(); return; }
+                if (d && d.off_integration) {
+                    try {
+                        const r = await bpsFetch("/api/bps/distance_sensors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device_id: d.device_id }) });
+                        if (r.ok) d = ((await r.json()).devices || []).find(x => x.device_id === d.device_id) || d;
+                    } catch (e) { /* shown below */ }
+                }
+                if (d && !d.off_integration) { st.sensor = d; person(); return; }
+                const waited = Math.round((Date.now() - t0) / 1000);
+                show(5, T("Turning on its distance sensors"),
+                    `<p>${escHtml(T("Waiting for Bermuda to create the device's distance sensors. This usually takes under a minute."))}</p>`
+                    + `<div class="bps-wiz-bar"><div style="width:${Math.min(100, Math.round(waited / 0.9))}%"></div></div>`
+                    + (waited > 90 ? `<p class="bps-links-hint">${escHtml(T("Still waiting. A receiver must hear the device before Bermuda creates its sensors: keep it near one. You can close this; the device then shows up under Bluetooth devices."))}</p>` : ""));
+                st.timer = setTimeout(poll, 4000);
+            };
+            poll();
+        }
+
+        // 5b. Link it to a person
+        async function person() {
+            if (!st.info) { try { await info(); } catch (e) { /* person picker without a default */ } }
+            const people = (setData && setData.choices.people) || [];
+            const me = st.info && st.info.me;
+            const opts = people.map(p => `<option value="${escHtml(p.entity_id)}"${p.entity_id === me ? " selected" : ""}>${escHtml(p.name)}</option>`).join("");
+            const d = st.sensor;
+            show(5, T("Link it to a person"),
+                `<p class="bps-wiz-ok">✓ ${escHtml(T("{} is tracked: {} of {} distance sensors on.", d.name, d.on, d.total))}</p>`
+                + `<p>${escHtml(T("Whose is it? BPS then places that person with it. In about a minute it also shows up under Map & Setup → Tracking."))}</p>`
+                + `<select class="bps-modal-input" id="wizPerson">${opts}</select>`,
+                d.key ? `<button type="button" class="bps-btn bps-btn-primary" data-w="link">${escHtml(T("Link and save"))}</button>` : "");
+        }
+        async function link(btn) {
+            const pid = document.getElementById("wizPerson").value;
+            const key = st.sensor.key;
+            if (!pid || !key || !setDraft) return;
+            btn.disabled = true;
+            if (!setDraft.persons[pid]) setDraft.persons[pid] = { trackers: [], notify: null };
+            const p = setDraft.persons[pid];
+            if (!p.trackers.some(t => t.key === key)) {
+                const kind = st.kind === "watch" ? "watch" : st.kind === "tag" ? "tag" : "phone";
+                p.trackers.push({ key, kind, charging: null });
+            }
+            document.getElementById("setSave").click();
+            close();
+        }
+
+        pick();
+    }
 
     async function refreshSettingsStatus() {
         try {
@@ -5754,7 +6023,92 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (name === "debugging" && !scannerLinkingLoading) loadScannerLinking();
             onSettingsTab(name === "settings");
             if (name === "learned") loadLearned();
+            if (name === "calibration") loadAccuracy();
         });
+    });
+
+    // =================================================================
+    // Calibration tab: Accuracy (truth marks, fingerprint weight)
+    // =================================================================
+    let accTimer = null;
+    const accPct = (w) => Math.round(w * 100) + "%";
+    function accMethod(key) {
+        if (key === "tri") return bpsTr("Trilateration only");
+        if (key === "fp") return bpsTr("Fingerprint only");
+        const w = parseFloat(key.slice(1));
+        return w === 0 ? bpsTr("Trilateration only") : bpsTr("Mix, {} fingerprint", accPct(w));
+    }
+    async function loadAccuracy() {
+        clearTimeout(accTimer);
+        let d;
+        try {
+            const r = await bpsFetch("/api/bps/truth");
+            if (!r.ok) throw new Error(r.status);
+            d = await r.json();
+        } catch (e) {
+            document.getElementById("accStatus").textContent = bpsTr("Could not load the accuracy data.");
+            return;
+        }
+        renderAccuracy(d);
+        if (d.collecting.length) accTimer = setTimeout(loadAccuracy, 3000);
+    }
+    function renderAccuracy(d) {
+        const lines = [];
+        const floors = Object.entries(d.references || {});
+        if (!floors.length) {
+            lines.push(bpsTr("No fingerprint references yet: turn on Auto calibration above. The receivers measuring each other are the references."));
+        } else {
+            lines.push(bpsTr("Fingerprint references: {}", floors.map(([f, n]) => `${f} ${n}`).join(", ")));
+        }
+        lines.push(d.weight > 0 ? bpsTr("In use: {} fingerprint", accPct(d.weight)) : bpsTr("In use: trilateration only"));
+        (d.collecting || []).forEach(c => lines.push(bpsTr("Measuring {}: {} s left, {} readings. Keep it still.", c.entity, Math.max(0, c.left), c.cycles)));
+        document.getElementById("accStatus").innerHTML = lines.map(l => `<div>${escHtml(l)}</div>`).join("");
+        const host = document.getElementById("accBody");
+        if (!d.usable) {
+            host.innerHTML = `<p class="bps-links-hint">${escHtml(bpsTr("No marks yet. On the Map tab, press 📍 next to a tracked device and click where it really is."))}</p>`;
+            return;
+        }
+        const order = ["tri", "fp", "w0.25", "w0.5", "w0.75"].filter(k => k in d.summary);
+        const best = d.best_weight;
+        const bestKey = best == null ? null : (best === 0 ? "tri" : (best === 1 ? "fp" : "w" + best));
+        let html = `<table class="bps-acc-table"><thead><tr><th>${escHtml(bpsTr("Method"))}</th><th>${escHtml(bpsTr("Typical error"))}</th></tr></thead><tbody>`;
+        order.forEach(k => {
+            html += `<tr${k === bestKey ? ' class="bps-acc-best"' : ""}><td>${escHtml(accMethod(k))}</td><td>${d.summary[k].toFixed(1)} m</td></tr>`;
+        });
+        html += "</tbody></table>";
+        html += `<p class="bps-links-hint">${escHtml(bpsTr("Median over {} marks. Lower is better.", d.usable))}</p>`;
+        const btns = [];
+        if (best != null && Math.abs(best - d.weight) > 0.01) {
+            btns.push(`<button type="button" class="bps-btn bps-btn-primary" data-acc-weight="${best}">${escHtml(best === 0 ? bpsTr("Use trilateration only") : bpsTr("Use {} fingerprint", accPct(best)))}</button>`);
+        }
+        if (d.weight > 0 && best !== 0) {
+            btns.push(`<button type="button" class="bps-btn bps-btn-outline" data-acc-weight="0">${escHtml(bpsTr("Use trilateration only"))}</button>`);
+        }
+        if (btns.length) html += `<div class="bps-btnrow">${btns.join("")}</div>`;
+        html += `<h4 class="bps-pl-h4">${escHtml(bpsTr("Marks"))}</h4><table class="bps-acc-table"><thead><tr><th>${escHtml(bpsTr("Device"))}</th><th>${escHtml(bpsTr("Floor"))}</th><th>${escHtml(bpsTr("When"))}</th><th>${escHtml(bpsTr("Trilateration"))}</th><th>${escHtml(bpsTr("Fingerprint"))}</th><th></th></tr></thead><tbody>`;
+        [...d.marks].reverse().forEach(m => {
+            const e = m.error || {};
+            const when = new Date(m.at * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+            const wrong = m.wrong_floor ? ` <span class="bps-links-hint">${escHtml(bpsTr("{} on the wrong floor", m.wrong_floor))}</span>` : "";
+            html += `<tr><td>${escHtml(m.entity)}</td><td>${escHtml(m.floor)}${wrong}</td><td>${escHtml(when)}</td>`
+                + `<td>${e.tri != null ? e.tri.toFixed(1) + " m" : "–"}</td><td>${e.fp != null ? e.fp.toFixed(1) + " m" : "–"}</td>`
+                + `<td><button type="button" class="bps-track-remove" data-acc-del="${escHtml(m.id)}" title="${escHtml(bpsTr("Delete this mark"))}">×</button></td></tr>`;
+        });
+        html += "</tbody></table>";
+        host.innerHTML = html;
+    }
+    document.getElementById("accuracyCard").addEventListener("click", async (ev) => {
+        const w = ev.target.closest("[data-acc-weight]");
+        const del = ev.target.closest("[data-acc-del]");
+        if (!w && !del) return;
+        const body = w ? { action: "weight", value: parseFloat(w.dataset.accWeight) } : { action: "delete", id: del.dataset.accDel };
+        try {
+            const r = await bpsFetch("/api/bps/truth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) throw new Error(await r.text());
+            renderAccuracy(await r.json());
+        } catch (e) {
+            bpsToast(bpsTr("Could not save: {}", e.message || e));
+        }
     });
 
     // =================================================================

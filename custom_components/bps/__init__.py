@@ -45,6 +45,7 @@ from .calibration import (
 from .storage import (
     BPS_FILE_LOCK,
     get_bps_data,
+    get_bps_data_for_edit,
     load_bps_data,
     migrate_legacy,
     save_bps_data,
@@ -56,6 +57,10 @@ from .placement import analyze as analyze_placement
 from .usage import async_setup_usage
 from .engine import async_setup_engine, register_services
 from . import distance_sensors
+from . import add_device
+from . import bermuda_source
+from . import fingerprint
+from . import truth
 from .learned import apply_pref_action, build_learned, scan_log
 from . import plan as sugg_plan
 from .access import can_configure, denied, user_access
@@ -330,13 +335,23 @@ async def update_tracked_entities(hass, jinja_code):
     template = Template(jinja_code, hass)  # compile once; async_render re-evaluates each tick
     while True:
         try:
-            tracked_entities = template.async_render()
-            # The template matches every "_distance_to_" sensor; keep only the
-            # ones Bermuda actually owns, so look-alike sensors from other
-            # integrations (e.g. an mmWave sensor's
-            # "_distance_to_detection_object") never become tracked devices.
-            allowed = set(_bermuda_distance_sensor_ids(hass))
-            tracked_entities = [e for e in tracked_entities if e in allowed]
+            # Straight from Bermuda when it has the read API (bermuda_source.py):
+            # no distance sensors needed. The ids below are only names in the
+            # sensors' shape, so the rest of the loop is the same either way.
+            direct = bermuda_source.async_readings(hass)
+            _set_direct_readings(hass, direct)
+            if direct is not None:
+                tracked_entities = [
+                    f"sensor.{dev}_distance_to_{rec}" for dev, recs in direct.items() for rec in recs
+                ]
+            else:
+                tracked_entities = template.async_render()
+                # The template matches every "_distance_to_" sensor; keep only the
+                # ones Bermuda actually owns, so look-alike sensors from other
+                # integrations (e.g. an mmWave sensor's
+                # "_distance_to_detection_object") never become tracked devices.
+                allowed = set(_bermuda_distance_sensor_ids(hass))
+                tracked_entities = [e for e in tracked_entities if e in allowed]
 
             await prune_stale_positions(hass)
 
@@ -692,6 +707,36 @@ def _build_device_availability(hass):
     return slug_to_device, device_entities
 
 
+async def _liveness_dump(hass):
+    """Bermuda's dump of the configured devices, or None when it fails."""
+    try:
+        return await wait_for(
+            hass.services.async_call(
+                "bermuda", "dump_devices", {"configured_devices": True},
+                blocking=True, return_response=True,
+            ),
+            timeout=DUMP_DEVICES_TIMEOUT_S,
+        ) or {}
+    except TimeoutError:
+        _LOGGER.warning(
+            "Receiver liveness: bermuda.dump_devices timed out after %ss; "
+            "skipping this refresh", DUMP_DEVICES_TIMEOUT_S,
+        )
+    except Exception as e:
+        _LOGGER.info(f"Receiver liveness: dump_devices unavailable: {e}")
+    return None
+
+
+def _set_direct_readings(hass, readings):
+    """This cycle's readings from Bermuda's read API (None: read the sensors)."""
+    hass.data.setdefault(DOMAIN, {})["direct_readings"] = readings
+
+
+def _direct_readings(hass):
+    data = getattr(hass, "data", None)
+    return data.get(DOMAIN, {}).get("direct_readings") if isinstance(data, dict) else None
+
+
 async def update_receiver_liveness(hass):
     """Recompute the set of offline receivers, mirroring the Lovelace card's
     tiered status so the panel and the card agree.
@@ -714,23 +759,14 @@ async def update_receiver_liveness(hass):
     A receiver no tier can resolve at all is left ONLINE (never flagged).
     """
     dom = hass.data.setdefault(DOMAIN, {})
-    try:
-        devices = await wait_for(
-            hass.services.async_call(
-                "bermuda", "dump_devices", {"configured_devices": True},
-                blocking=True, return_response=True,
-            ),
-            timeout=DUMP_DEVICES_TIMEOUT_S,
-        ) or {}
-    except TimeoutError:
-        _LOGGER.warning(
-            "Receiver liveness: bermuda.dump_devices timed out after %ss; "
-            "skipping this refresh", DUMP_DEVICES_TIMEOUT_S,
-        )
+    direct_ages = bermuda_source.async_receiver_ages(hass)
+    if direct_ages is not None:
+        # Bermuda's read API: the same ages without serialising a dump.
+        dom["rl_ages"] = direct_ages
+        dom["rl_anchor_wall"] = time.time()
         devices = None
-    except Exception as e:
-        _LOGGER.info(f"Receiver liveness: dump_devices unavailable: {e}")
-        devices = None
+    else:
+        devices = await _liveness_dump(hass)
 
     if isinstance(devices, dict):
         _refresh_dump_ages(hass, dom, devices)
@@ -738,6 +774,10 @@ async def update_receiver_liveness(hass):
     elapsed = max(0.0, time.time() - dom["rl_anchor_wall"]) if dom.get("rl_anchor_wall") else 0.0
 
     receivers, with_reading = _scanner_slugs_and_readings(hass)
+    if direct_ages is not None:
+        direct = _direct_readings(hass) or {}
+        with_reading = {rec for recs in direct.values() for rec in recs}
+        receivers = set(receivers) | with_reading | set(direct_ages)
     slug_to_device, device_entities = _build_device_availability(hass)
 
     def device_online(slug):
@@ -784,22 +824,32 @@ async def update_receiver_liveness(hass):
 async def update_receiver_radii(hass, eids):
     """Update receiver 'r' values (pixels) and raw 'distance' (meters) for an entity"""
     tracker_h = _tracker_height(eids["data"])
+    direct = _direct_readings(hass)
+    direct = direct.get(eids["entity"]) if direct is not None else None
     for floor in (f for f in eids["data"]["floor"] if f["scale"] is not None):
         for receiver in floor["receivers"]:
-            entity_id = "sensor." + eids["entity"] + "_distance_to_" + receiver["entity_id"]
-            rec_value = hass.states.get(entity_id)
-            if rec_value is not None:
+            reading = direct.get(receiver["entity_id"]) if direct is not None else None
+            if direct is not None and reading is None:
+                continue   # Bermuda doesn't hear it through this receiver right now
+            rec_value = None
+            if reading is None:
+                entity_id = "sensor." + eids["entity"] + "_distance_to_" + receiver["entity_id"]
+                rec_value = hass.states.get(entity_id)
+            if reading is not None or rec_value is not None:
                 try:
-                    distance = float(rec_value.state)
-                    # Bermuda's distance_to sensors can report in feet or
-                    # meters, chosen per entity. The floor scale and the
-                    # calibration corrections are both in meters, so normalize
-                    # to meters first — otherwise a feet sensor reads ~3.28x too
-                    # far (treated as metres), inflating its circle and pulling
-                    # the trilateration toward it.
-                    unit = rec_value.attributes.get("unit_of_measurement")
-                    if unit in DistanceConverter.VALID_UNITS and unit != UnitOfLength.METERS:
-                        distance = DistanceConverter.convert(distance, unit, UnitOfLength.METERS)
+                    if reading is not None:
+                        distance = float(reading["distance"])   # always metres
+                    else:
+                        distance = float(rec_value.state)
+                        # Bermuda's distance_to sensors can report in feet or
+                        # meters, chosen per entity. The floor scale and the
+                        # calibration corrections are both in meters, so normalize
+                        # to meters first — otherwise a feet sensor reads ~3.28x too
+                        # far (treated as metres), inflating its circle and pulling
+                        # the trilateration toward it.
+                        unit = rec_value.attributes.get("unit_of_measurement")
+                        if unit in DistanceConverter.VALID_UNITS and unit != UnitOfLength.METERS:
+                            distance = DistanceConverter.convert(distance, unit, UnitOfLength.METERS)
                     # Per-receiver correction factor learned by the
                     # calibration (calibration.py); equivalent to a
                     # per-scanner RSSI offset in Bermuda's exponential model.
@@ -1027,13 +1077,25 @@ async def update_trilateration_and_zone(hass, new_global_data, entity):
     scale = elected["scale"]
     tricords = elected["fix"]
 
+    # Fingerprint: a second opinion from how the receivers hear each other
+    # (fingerprint.py). Always computed (telemetry, truth marks); it moves
+    # the fix only with a fingerprint_weight above 0 in the layout.
+    fp = None
+    try:
+        fp = _fingerprint_cycle(hass, new_global_data, entity, lowest_floor_name, tricords)
+    except Exception as e:  # never let the second opinion break the first
+        _LOGGER.debug("Fingerprint failed for %s: %s", entity, e)
+    fused = tricords
+    if fp is not None and tricords is not None:
+        fused = fingerprint.blend(tricords, fp, _fingerprint_weight(new_global_data, entity))
+
     if tricords is not None:
         # Constant-velocity Kalman smoothing of the published position. The RAW
         # trilaterated fix feeds the filter (so the estimate is never biased by
         # the zone snapping applied below); the filtered output is clipped to the
         # floor bounds inside the helper.
         avg_x, avg_y = _kalman_position_update(
-            entity, lowest_floor_name, tricords, scale, floor_bounds
+            entity, lowest_floor_name, fused, scale, floor_bounds
         )
 
         # A fix outside every zone is physically implausible (BLE noise pushed
@@ -1074,6 +1136,8 @@ async def update_trilateration_and_zone(hass, new_global_data, entity):
                 "raw": [round(float(tricords[0]), 2), round(float(tricords[1]), 2)],
                 "rms_m": round(elected["rms_m"], 3),
                 "conf": round(elected["conf"], 3),
+                # The fingerprint's own fix and confidence (None: no references).
+                "fp": [round(fp["x"], 2), round(fp["y"], 2), round(fp["conf"], 3)] if fp else None,
                 "updated": time.time(),
             },
         )
@@ -1094,6 +1158,7 @@ def update_or_add_entry(data, new_entry):
             item["raw"] = new_entry["raw"]  # Pre-Kalman fix (telemetry)
             item["rms_m"] = new_entry["rms_m"]  # Fit residual, m (telemetry)
             item["conf"] = new_entry["conf"]  # Elected floor confidence
+            item["fp"] = new_entry.get("fp")  # Fingerprint fix (telemetry)
             item["updated"] = new_entry["updated"]  # Freshness for pruning
             return data
 
@@ -1546,6 +1611,8 @@ async def async_setup(hass, config):
             hass.http.register_view(BPSAccessAPI())
             hass.http.register_view(BPSLearnedAPI())
             hass.http.register_view(BPSDistanceSensorsAPI())
+            hass.http.register_view(BPSAddDeviceAPI())
+            hass.http.register_view(BPSTruthAPI())
             hass.data["bps_views_registered"] = True
 
         config_path = hass.config.path()
@@ -1682,6 +1749,7 @@ async def async_setup(hass, config):
         hass.bus.async_listen_once("homeassistant_stop", handle_homeassistant_stop)
 
         await async_restore_calibration_state(hass)
+        await _truth_load(hass)
         await async_start_auto_if_enabled(hass)
 
         _LOGGER.info("The BPS integration is fully initialized")
@@ -1701,6 +1769,9 @@ async def async_unload_entry(hass: HomeAssistant, entry):
     """Remove a configuration entry"""
     _LOGGER.info("Attempting to offload platforms for entry: %s", entry.entry_id)
 
+    direct_unsub = hass.data.pop("bps_direct_tracked_unsub", None)
+    if direct_unsub:
+        direct_unsub()
     state_listener_unsub = hass.data.pop("bps_state_listener_unsub", None)
     if state_listener_unsub:
         state_listener_unsub()
@@ -2254,6 +2325,59 @@ class BPSDistanceSensorsAPI(HomeAssistantView):
         return web.json_response({**distance_sensors.status(hass), "enabled": done})
 
 
+class BPSAddDeviceAPI(HomeAssistantView):
+    """Settings tab: the "Add a phone, watch or tag" guide.
+
+    GET: Bermuda, Android phones with the BLE transmitter, Private BLE
+    Device entries, and the person of the current user.
+    POST {"action": "start"} remembers what every receiver hears now;
+    {"action": "near"} lists the devices that came close since then;
+    {"action": "add", "value": ...} adds a device to Bermuda's tracked
+    devices (Bermuda reloads itself).
+    """
+    url = "/api/bps/add_device"
+    name = "api:bps:add_device"
+    requires_auth = True
+
+    async def get(self, request):
+        hass = request.app["hass"]
+        if not can_configure(hass, request):
+            return denied()
+        user = request.get("hass_user")
+        me = next((s.entity_id for s in hass.states.async_all("person")
+                   if user and s.attributes.get("user_id") == user.id), None)
+        return web.json_response({**add_device.status(hass), "me": me})
+
+    async def post(self, request):
+        hass = request.app["hass"]
+        if not can_configure(hass, request):
+            return denied()
+        try:
+            data = await request.json()
+        except Exception:
+            return web.Response(status=400, text="Bad request")
+        action = data.get("action")
+        store = hass.data.setdefault(DOMAIN, {})
+        try:
+            if action == "start":
+                store["add_baseline"] = await add_device.async_scan(hass)
+                return web.json_response({"devices": len(store["add_baseline"])})
+            if action == "near":
+                found = add_device.near(store.get("add_baseline") or {}, await add_device.async_scan(hass))
+                return web.json_response({"found": found})
+            if action == "add":
+                value = str(data.get("value") or "").strip()
+                if not value:
+                    return web.Response(status=400, text="value is required")
+                return web.json_response({"added": add_device.add(hass, value)})
+        except ValueError as e:
+            return web.Response(status=400, text=str(e))
+        except Exception as e:
+            _LOGGER.error("add_device %s failed: %s", action, e)
+            return web.Response(status=500, text=str(e))
+        return web.Response(status=400, text=f"Unknown action {action!r}")
+
+
 class BPSAccessAPI(HomeAssistantView):
     """What the current user may do in the panel (drives the restricted view)."""
     url = "/api/bps/access"
@@ -2630,3 +2754,174 @@ def trilaterate(known_points, bounds=None, min_weight_radius=1e-3):
         return None
     x, y = result.x # Extract the calculated coordinates
     return x, y # return the result
+
+
+# --- fingerprint + truth marks ----------------------------------------------------
+
+FP_REFS_TTL = 30.0   # the calibration samples a new round every 30 s
+
+
+def _entity_layout(new_global_data, entity):
+    return next((e["data"] for e in new_global_data if e["entity"] == entity), None)
+
+
+def _fingerprint_weight(new_global_data, entity):
+    layout = _entity_layout(new_global_data, entity) or {}
+    w = layout.get("fingerprint_weight")
+    return float(w) if isinstance(w, (int, float)) and not isinstance(w, bool) and 0 <= w <= 1 else 0.0
+
+
+def _fingerprint_refs(hass, layout):
+    """Reference fingerprints per floor, rebuilt at most every FP_REFS_TTL."""
+    dom = hass.data.setdefault(DOMAIN, {})
+    cached = dom.get("fp_refs")
+    now = time.time()
+    if cached and now - cached["at"] < FP_REFS_TTL:
+        return cached["refs"]
+    samples = get_calibration_state(hass).get("samples") or {}
+    extra = [r for r in (truth.reference(m) for m in dom.get("truth_marks") or []
+                         if now > m.get("until", 0)) if r]
+    refs = fingerprint.references(layout, samples, extra=extra)
+    dom["fp_refs"] = {"at": now, "refs": refs}
+    return refs
+
+
+def _fingerprint_cycle(hass, new_global_data, entity, floor_name, tricords):
+    """Match this cycle's readings, learn the gain, feed a collecting truth
+    mark. Returns the match (fingerprint.match) or None."""
+    layout = _entity_layout(new_global_data, entity)
+    if layout is None:
+        return None
+    dom = hass.data.setdefault(DOMAIN, {})
+    gain = dom.setdefault("fp_gain", fingerprint.Gain())
+    g = gain.get(entity)
+    vector = fingerprint.thing_vector(layout)
+    refs = _fingerprint_refs(hass, layout).get(floor_name)
+    fp = fingerprint.match(vector, refs, gain=g) if refs else None
+    if fp is not None and fp["conf"] < fingerprint.MIN_CONF:
+        fp = None
+    if fp is not None and fp.get("ratio"):
+        gain.learn(fp["ratio"], fp["conf"], entity)
+    mark = truth.collecting(dom.get("truth_marks") or [], entity)
+    if mark is not None:
+        truth.add_cycle(mark, floor_name, tricords, (fp["x"], fp["y"]) if fp else None,
+                        fingerprint.trust(fp.get("ratio")) if fp else None, vector, g)
+        _truth_save_later(hass)
+    return fp
+
+
+def _truth_store(hass):
+    from homeassistant.helpers.storage import Store
+    dom = hass.data.setdefault(DOMAIN, {})
+    if "truth_store" not in dom:
+        dom["truth_store"] = Store(hass, 1, "bps_truth_marks")
+    return dom["truth_store"]
+
+
+async def _truth_load(hass):
+    dom = hass.data.setdefault(DOMAIN, {})
+    try:
+        data = await _truth_store(hass).async_load() or {}
+    except Exception as e:
+        _LOGGER.warning("Could not load truth marks: %s", e)
+        data = {}
+    marks = data.get("marks")
+    dom["truth_marks"] = marks if isinstance(marks, list) else []
+
+
+def _truth_save_later(hass):
+    dom = hass.data.setdefault(DOMAIN, {})
+    _truth_store(hass).async_delay_save(lambda: {"marks": truth.trim(dom.get("truth_marks") or [])}, 10)
+
+
+async def _set_fingerprint_weight(hass, weight):
+    async with BPS_FILE_LOCK:
+        coords = get_bps_data_for_edit(hass)
+        if not coords:
+            raise ValueError("No BPS data saved.")
+        coords["fingerprint_weight"] = weight
+        await save_bps_data(hass, coords)
+
+
+def _truth_payload(hass):
+    dom = hass.data.setdefault(DOMAIN, {})
+    marks = dom.get("truth_marks") or []
+    layout = get_bps_data(hass) or {}
+    refs = _fingerprint_refs(hass, layout) if layout else {}
+    cal = get_calibration_state(hass)
+    now = time.time()
+    w = layout.get("fingerprint_weight")
+    return {
+        "weight": float(w) if isinstance(w, (int, float)) and not isinstance(w, bool) else 0.0,
+        "references": {f: len(r) for f, r in refs.items()},
+        "auto_calibration": cal.get("mode") == "auto",
+        "gain": dom["fp_gain"].to_dict() if dom.get("fp_gain") else None,
+        "collecting": [{"id": m["id"], "entity": m["entity"], "left": round(m["until"] - now),
+                        "cycles": len(m.get("cycles") or [])}
+                       for m in marks if now <= m.get("until", 0)],
+        **truth.evaluate([m for m in marks if now > m.get("until", 0)]),
+    }
+
+
+class BPSTruthAPI(HomeAssistantView):
+    """Accuracy: truth marks and the fingerprint weight.
+
+    GET: the marks with their errors per method, the reference count per
+    floor, and the current weight. POST {"action": "mark", "entity", "floor",
+    "x", "y"} starts a mark (the device should stay put for truth.COLLECT_S);
+    {"action": "delete", "id"}; {"action": "weight", "value": 0..1}.
+    """
+    url = "/api/bps/truth"
+    name = "api:bps:truth"
+    requires_auth = True
+
+    async def get(self, request):
+        hass = request.app["hass"]
+        if not can_configure(hass, request):
+            return denied()
+        return web.json_response(_truth_payload(hass))
+
+    async def post(self, request):
+        hass = request.app["hass"]
+        if not can_configure(hass, request):
+            return denied()
+        try:
+            data = await request.json()
+        except Exception:
+            return web.Response(status=400, text="Bad request")
+        dom = hass.data.setdefault(DOMAIN, {})
+        marks = dom.setdefault("truth_marks", [])
+        action = data.get("action")
+        if action == "mark":
+            layout = get_bps_data(hass) or {}
+            floor = next((f for f in layout.get("floor", []) if f.get("name") == data.get("floor")), None)
+            try:
+                x, y = float(data.get("x")), float(data.get("y"))
+            except (TypeError, ValueError):
+                return web.Response(status=400, text="x and y are required")
+            if floor is None or not floor.get("scale") or not data.get("entity"):
+                return web.Response(status=400, text="Unknown floor, floor without scale, or no device")
+            for m in marks:   # a new click replaces a mark still collecting for the device
+                if m.get("entity") == data["entity"] and time.time() <= m.get("until", 0):
+                    m["until"] = 0
+            marks.append(truth.new_mark(data["entity"], floor["name"], x, y, floor["scale"]))
+            dom["truth_marks"] = truth.trim(marks)
+            _truth_save_later(hass)
+        elif action == "delete":
+            dom["truth_marks"] = [m for m in marks if m.get("id") != data.get("id")]
+            dom.pop("fp_refs", None)
+            _truth_save_later(hass)
+        elif action == "weight":
+            try:
+                w = float(data.get("value"))
+            except (TypeError, ValueError):
+                return web.Response(status=400, text="value is required")
+            if not 0 <= w <= 1:
+                return web.Response(status=400, text="value must be 0..1")
+            try:
+                await _set_fingerprint_weight(hass, w)
+            except ValueError as e:
+                return web.Response(status=400, text=str(e))
+        else:
+            return web.Response(status=400, text="Unknown action")
+        return web.json_response(_truth_payload(hass))
