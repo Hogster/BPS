@@ -301,6 +301,17 @@
                     </details>
                 </div>
             </div>
+            <div class="bps-card" id="accuracyCard">
+                <div class="bps-section-head">
+                    <h3>Accuracy</h3>
+                    <span class="tooltip">❓
+                        <span class="tooltip-text">Truth marks: you show BPS where a device really is, and BPS measures how far off it was. They also compare trilateration with fingerprint positioning (matching how the receivers hear the device against how they hear each other), so you can pick the mix that fits your house.</span>
+                    </span>
+                </div>
+                <p class="bps-pl-lead" data-i18n="accuracy-lead">How far off is BPS, in metres? On the Map tab, press 📍 next to a tracked device and click where it really is, then keep it still for 45 seconds. Each mark measures trilateration, the fingerprint and mixes of the two. Marks in different rooms give the fairest answer.</p>
+                <div id="accStatus" class="bps-calib-status"></div>
+                <div id="accBody" class="bps-calib-matrix"></div>
+            </div>
         </section>
 
         <!-- ============================ DEBUGGING ============================ -->
@@ -450,10 +461,11 @@ card:
                     </span>
                 </div>
                 <div id="setDistance"><p class="bps-links-hint">Loading…</p></div>
+                <button type="button" class="bps-btn bps-btn-primary bps-add-dev-btn" id="setAddDevice">+ Add a phone, watch or tag</button>
                 <label class="bps-switch bps-set-row">
                     <input type="checkbox" id="setAutoDistance">
                     <span class="bps-slider"></span>
-                    <span><b>Turn on new receivers automatically</b> <span class="bps-links-hint">When you add a receiver, its distance sensors are turned on for every device that already has some on.</span></span>
+                    <span><b>Manage distance sensors automatically</b> <span class="bps-links-hint">When you add a receiver, its distance sensors are turned on for every device that already has some on. If Bermuda can give BPS the distances directly, BPS turns the sensors off instead, and back on if that stops working.</span></span>
                 </label>
             </div>
             <div class="bps-card">

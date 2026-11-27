@@ -17,6 +17,21 @@ def run(coro):
     return asyncio.new_event_loop().run_until_complete(coro)
 
 
+
+def test_direct_readings_from_bermuda_replace_the_sensors():
+    """Bermuda's read API: metres straight from Bermuda, the sensor is not read;
+    a receiver it doesn't hear right now gets no circle."""
+    class Hass:
+        data = {bps.DOMAIN: {"direct_readings": {"phone": {"probe": {"distance": 2.3, "age": 1.0}}}}}
+        states = type("S", (), {"get": staticmethod(lambda _eid: (_ for _ in ()).throw(AssertionError(_eid)))})()
+
+    rec = {"entity_id": "probe", "cords": {"x": 0, "y": 0}}
+    other = {"entity_id": "far", "cords": {"x": 9, "y": 9}}
+    data = {"floor": [{"name": "F", "scale": SCALE, "receivers": [rec, other]}]}
+    run(bps.update_receiver_radii(Hass(), {"entity": "phone", "data": data}))
+    assert abs(rec["distance"] - 2.3) < 1e-9 and abs(rec["cords"]["r"] - 92.0) < 1e-6
+    assert "r" not in other["cords"] and "distance" not in other
+
 # --------------------------------------------------------------------------- #
 # Trilateration solver
 # --------------------------------------------------------------------------- #
