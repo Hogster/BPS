@@ -35,12 +35,32 @@ STORAGE_KEY_CALIB = "bps_calibration_state"      # -> config/.storage/bps_calibr
 BPS_FILE_LOCK = asyncio.Lock()
 
 
+# Floor-plan images. They used to live in ``www/bps_maps`` too, which serves
+# them to anyone at ``/local/bps_maps/<file>`` without logging in. They now
+# live outside ``www`` and reach the card/panel only through the authenticated
+# ``/api/bps/map/<file>`` view.
+MAPS_DIRNAME = "bps_maps"                        # -> config/bps_maps
+LEGACY_MAPS_SUBPATH = "www/bps_maps"
+MAP_IMAGE_EXTS = {
+    ".png", ".jpg", ".jpeg", ".jfif", ".jpe", ".gif", ".webp", ".bmp", ".svg", ".avif",
+}
+
+
+def maps_dir(hass) -> Path:
+    """Where floor-plan images live: ``config/bps_maps`` (not web-served)."""
+    return Path(hass.config.path(MAPS_DIRNAME))
+
+
+def legacy_maps_dir(hass) -> Path:
+    return Path(hass.config.path(LEGACY_MAPS_SUBPATH))
+
+
 def _legacy_layout_path(hass) -> Path:
-    return Path(hass.config.path("www/bps_maps")) / "bpsdata.txt"
+    return legacy_maps_dir(hass) / "bpsdata.txt"
 
 
 def _legacy_calib_path(hass) -> Path:
-    return Path(hass.config.path("www/bps_maps")) / "bps_calibration_state.json"
+    return legacy_maps_dir(hass) / "bps_calibration_state.json"
 
 
 def _bucket(hass) -> dict:
@@ -160,8 +180,8 @@ async def migrate_legacy(hass) -> None:
     a blank/whitespace file (the issue-#104 artifact — no recoverable data) is
     deleted; a corrupt-but-non-empty file is LEFT in place (may be
     hand-recoverable); a valid file is saved to the store, verified, and only
-    then deleted — closing the ``/local/`` exposure. Map images stay in
-    ``www/bps_maps`` (served via ``/local/``) and are untouched.
+    then deleted — closing the ``/local/`` exposure. Map images are then
+    moved out of ``www/bps_maps`` too (see ``migrate_legacy_map_images``).
     """
     await _migrate_one(
         _layout_store(hass), _legacy_layout_path(hass), "layout",
@@ -171,6 +191,51 @@ async def migrate_legacy(hass) -> None:
         _calib_store(hass), _legacy_calib_path(hass), "calibration state",
         lambda parsed: isinstance(parsed, dict),
     )
+    try:
+        await hass.async_add_executor_job(
+            migrate_legacy_map_images, legacy_maps_dir(hass), maps_dir(hass))
+    except Exception as e:  # never abort setup over a file move
+        _LOGGER.error("Could not move map images out of www/bps_maps: %s", e)
+
+
+def migrate_legacy_map_images(legacy: Path, target: Path) -> list:
+    """Move floor-plan images from ``www/bps_maps`` to ``config/bps_maps``.
+
+    Runs every boot (idempotent), so an image restored from a backup or
+    dropped into the old folder by hand is moved too. A name that already
+    exists in the new folder is never overwritten: the old copy is left in
+    place and logged, since only the user can say which one is right. The old
+    folder is removed once it is empty. Returns the moved file names.
+    Blocking: call from an executor.
+    """
+    target.mkdir(parents=True, exist_ok=True)
+    if not legacy.is_dir():
+        return []
+    moved = []
+    for f in sorted(legacy.iterdir()):
+        if not f.is_file() or f.suffix.lower() not in MAP_IMAGE_EXTS:
+            continue
+        dest = target / f.name
+        if dest.exists():
+            _LOGGER.warning(
+                "Map image %s exists in both www/bps_maps and %s; leaving the "
+                "www copy (still public via /local/) for you to remove",
+                f.name, target.name)
+            continue
+        try:
+            f.replace(dest)
+        except OSError:
+            # Different filesystem: copy, then delete the original.
+            import shutil
+            shutil.copy2(f, dest)
+            f.unlink()
+        moved.append(f.name)
+        _LOGGER.info("Moved map image %s out of www/bps_maps (no longer public)", f.name)
+    try:
+        legacy.rmdir()  # only succeeds when empty
+    except OSError:
+        pass
+    return moved
 
 
 async def _migrate_one(store: Store, legacy: Path, label: str, is_valid) -> None:

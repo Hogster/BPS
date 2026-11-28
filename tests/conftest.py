@@ -103,6 +103,13 @@ class _Response:
         self.body_text = text
 
 
+class _FileResponse(_Response):
+    def __init__(self, path, headers=None, **k):
+        super().__init__(status=200)
+        self.path = path
+        self.headers = dict(headers or {})
+
+
 def _json_response(data=None, status=200):
     r = _Response(status=status)
     r.json_body = data
@@ -115,7 +122,7 @@ def _install_homeassistant_stubs():
     aiofiles_mod.os = _module("aiofiles.os", makedirs=_aiofiles_makedirs, remove=_aiofiles_remove)
     _module("homeassistant.helpers.storage", Store=_FakeStore)
     _module("aiohttp", web=types.SimpleNamespace(
-        Response=_Response, json_response=_json_response, FileResponse=object,
+        Response=_Response, json_response=_json_response, FileResponse=_FileResponse,
     ))
     _module("homeassistant")
     components = _module("homeassistant.components")
@@ -182,6 +189,10 @@ def make_hass(config_dir=None):
     hass._store_saves = []
     hass._store_delay_saves = []
     hass._store_raise_on_load = set()   # store keys whose async_load should raise
+
+    async def _executor(func, *args):
+        return func(*args)
+    hass.async_add_executor_job = _executor
     return hass
 
 

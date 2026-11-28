@@ -150,3 +150,53 @@ def test_legacy_cleanup_retries_when_store_already_populated(tmp_path):
     run(st.migrate_legacy(hass))
     assert not stale.exists()                          # removed despite store non-empty
     assert st.get_bps_data(hass) == {"floor": [{"name": "Home"}]}  # data untouched
+
+
+# --- map images move out of www (no longer public via /local/) ---------------
+def _old_maps(hass):
+    d = Path(hass.config.path("www", "bps_maps"))
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def test_map_images_move_out_of_www(tmp_path):
+    hass = make_hass(tmp_path)
+    old = _old_maps(hass)
+    (old / "Home.png").write_bytes(b"png")
+    (old / "Upstairs.svg").write_bytes(b"<svg/>")
+    run(st.migrate_legacy(hass))
+    new = st.maps_dir(hass)
+    assert (new / "Home.png").read_bytes() == b"png"
+    assert (new / "Upstairs.svg").exists()
+    assert not old.exists()                       # empty old folder removed
+
+
+def test_map_image_migration_never_overwrites(tmp_path):
+    hass = make_hass(tmp_path)
+    old = _old_maps(hass)
+    (old / "Home.png").write_bytes(b"old")
+    new = st.maps_dir(hass)
+    new.mkdir(parents=True)
+    (new / "Home.png").write_bytes(b"new")
+    run(st.migrate_legacy(hass))
+    assert (new / "Home.png").read_bytes() == b"new"
+    assert (old / "Home.png").read_bytes() == b"old"   # left for the user to resolve
+
+
+def test_map_image_migration_keeps_non_images_and_is_idempotent(tmp_path):
+    hass = make_hass(tmp_path)
+    old = _old_maps(hass)
+    (old / "Home.png").write_bytes(b"png")
+    (old / "notes.txt").write_text("keep me")
+    run(st.migrate_legacy(hass))
+    run(st.migrate_legacy(hass))                  # second boot: nothing to do, no error
+    assert (st.maps_dir(hass) / "Home.png").exists()
+    assert (old / "notes.txt").exists()           # not ours to move
+    assert not (old / "Home.png").exists()
+
+
+def test_map_migration_fresh_install_creates_private_dir(tmp_path):
+    hass = make_hass(tmp_path)
+    run(st.migrate_legacy(hass))
+    assert st.maps_dir(hass).is_dir()
+    assert not Path(hass.config.path("www", "bps_maps")).exists()
