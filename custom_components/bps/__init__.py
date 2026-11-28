@@ -22,6 +22,7 @@ import logging
 import asyncio
 import math
 import os
+from urllib.parse import quote
 import json
 import re
 import copy
@@ -47,6 +48,8 @@ from .storage import (
     get_bps_data,
     get_bps_data_for_edit,
     load_bps_data,
+    MAP_IMAGE_EXTS,
+    maps_dir,
     migrate_legacy,
     save_bps_data,
     get_settings_raw, load_settings, save_settings,
@@ -122,11 +125,9 @@ RADIUS_JUMP_TOL = 0.5
 # Uploaded floor-plan maps: accepted image extensions and a size cap. Client
 # filenames are never trusted for filesystem paths (see _safe_maps_child).
 # .jfif/.jpe are ordinary JPEG variants a browser's image/jpeg picker yields.
-_ALLOWED_MAP_EXTS = {
-    ".png", ".jpg", ".jpeg", ".jfif", ".jpe", ".gif", ".webp", ".bmp", ".svg", ".avif",
-}
+_ALLOWED_MAP_EXTS = MAP_IMAGE_EXTS
 MAX_MAP_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
-# Non-map files that live in www/bps_maps and must never be deletable via the
+# Non-map files that once lived in the maps folder and must never be deletable via the
 # save_text "remove" field (that field is only meant to drop an old map image).
 _PROTECTED_MAPS_FILES = {"bpsdata.txt", "bps_calibration_state.json"}
 # Longest to wait on Bermuda's dump_devices before treating it as unavailable,
@@ -1597,6 +1598,7 @@ async def async_setup(hass, config):
             hass.http.register_view(BPSFrontendView())
             hass.http.register_view(BPSSaveAPIText())
             hass.http.register_view(BPSMapsListAPI())
+            hass.http.register_view(BPSMapImageAPI())
             hass.http.register_view(BPSTrackerIconsListAPI())
             hass.http.register_view(BPSUploadTrackerIconAPI())
             hass.http.register_view(BPSReadAPIText())
@@ -1616,7 +1618,9 @@ async def async_setup(hass, config):
             hass.data["bps_views_registered"] = True
 
         config_path = hass.config.path()
-        target_dir = os.path.join(config_path, "www", "bps_maps")
+        # Floor-plan images: config/bps_maps, outside www so /local/ never
+        # serves them (migrate_legacy moves any old www/bps_maps images here).
+        target_dir = str(maps_dir(hass))
         tracker_icons_dir = os.path.join(config_path, "www", "bps_icons")
 
         try:
@@ -1924,7 +1928,7 @@ class BPSSaveAPIText(HomeAssistantView):
         except (ValueError, TypeError):
             return web.Response(status=400, text="Coordinates must be valid JSON")
 
-        maps_path = hass.config.path("www/bps_maps")
+        maps_path = str(maps_dir(hass))
 
         try: # Persist the layout to the store + handle map upload/removal
             # Serialized with the calibration writers so read-modify-write
@@ -2206,14 +2210,19 @@ async def _zone_histories(hass, days=PLACEMENT_HISTORY_DAYS):
         return {}
 
 
+def map_image_url(name):
+    """The authenticated URL a client loads floor image `name` from."""
+    return f"/api/bps/map/{quote(name)}"
+
+
 def _map_urls(hass):
-    """floor name -> /local URL of its floor image."""
+    """floor name -> authenticated URL of its floor image."""
     out = {}
-    path = Path(hass.config.path("www/bps_maps"))
+    path = maps_dir(hass)
     try:
         for f in path.iterdir():
             if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"):
-                out.setdefault(f.stem, f"/local/bps_maps/{f.name}")
+                out.setdefault(f.stem, map_image_url(f.name))
     except OSError:
         pass
     return out
@@ -2577,8 +2586,38 @@ def _settings_payload(hass):
     }
 
 
+class BPSMapImageAPI(HomeAssistantView):
+    """Serve one floor-plan image from config/bps_maps, to logged-in users only.
+
+    Replaces the old unauthenticated /local/bps_maps/<file>. The card and the
+    panel fetch it with their Bearer token and draw it from a blob: URL.
+    """
+
+    url = "/api/bps/map/{filename}"
+    name = "api:bps:map"
+    requires_auth = True
+
+    async def get(self, request, filename):
+        hass = request.app["hass"]
+        target = _safe_maps_child(maps_dir(hass), filename, _ALLOWED_MAP_EXTS)
+        if target is None:
+            return web.Response(status=400, text="Invalid map filename")
+        if not await hass.async_add_executor_job(target.is_file):
+            return web.Response(status=404, text="Map not found")
+        return web.FileResponse(
+            target,
+            headers={
+                # Private: never let a shared cache keep a floor plan.
+                "Cache-Control": "private, max-age=300",
+                # An uploaded .svg must not run script if opened directly.
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+
 class BPSMapsListAPI(HomeAssistantView):
-    """API to list map files in /www/bps_maps."""
+    """API to list map files in config/bps_maps."""
     url = "/api/bps/maps"
     name = "api:bps:maps"
     requires_auth = True
@@ -2596,7 +2635,7 @@ class BPSMapsListAPI(HomeAssistantView):
     async def get(self, request):
         """Return a list of map files as JSON."""
         hass = request.app["hass"]
-        maps_path = hass.config.path("www/bps_maps")
+        maps_path = str(maps_dir(hass))
 
         try:
             file_names = await hass.async_add_executor_job(self._list_map_files, maps_path)

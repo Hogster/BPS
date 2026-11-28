@@ -54,10 +54,10 @@
 const BPS_CARD_SV = {
   "Configuration loaded.": "Konfigurationen är inläst.",
   "Floor: {} · {}/{} tracker(s) on this floor.": "Våning: {} · {}/{} spårare på den här våningen.",
-  "No map files found in /local/bps_maps.": "Inga kartfiler hittades i /local/bps_maps.",
+  "No map files found in config/bps_maps.": "Inga kartfiler hittades i config/bps_maps.",
   "Floor (floor name)": "Våning (våningens namn)",
   "Entities (comma separated sensor.*)": "Entiteter (kommaseparerade sensor.*)",
-  "Map file (optional, filename in www/bps_maps)": "Kartfil (valfritt, filnamn i www/bps_maps)",
+  "Map file (optional, filename in config/bps_maps)": "Kartfil (valfritt, filnamn i config/bps_maps)",
   "Image URL (optional, overrides map file)": "Bildadress (valfritt, ersätter kartfilen)",
   "Poll interval (seconds)": "Uppdateringsintervall (sekunder)",
   "Label scale (percent, e.g. 100 or 200)": "Etikettstorlek (procent, t.ex. 100 eller 200)",
@@ -725,11 +725,21 @@ class BpsMapCard extends HTMLElement {
     }
   }
 
+  // Floor images are served only to logged-in users, at /api/bps/map/<file>
+  // (they used to be public under /local/bps_maps). An `image:` that still
+  // points at the old public path is mapped to the new one.
+  _mapApiUrl(name) {
+    return `/api/bps/map/${encodeURIComponent(name)}`;
+  }
+
   async _resolveMapUrl(resolvedFloorName) {
-    if (this._config.image) return this._config.image;
+    if (this._config.image) {
+      const legacy = String(this._config.image).match(/^\/local\/bps_maps\/([^?#]+)/);
+      return legacy ? this._mapApiUrl(decodeURIComponent(legacy[1])) : this._config.image;
+    }
     const explicitMap = String(this._config.map_file || "").trim();
     if (explicitMap) {
-      return `/local/bps_maps/${explicitMap}`;
+      return this._mapApiUrl(explicitMap);
     }
 
     const floorName = String(resolvedFloorName || this._config.floor || "").trim();
@@ -742,13 +752,13 @@ class BpsMapCard extends HTMLElement {
     }
     const maps = await mapsRes.json();
     if (!Array.isArray(maps) || maps.length === 0) {
-      throw new Error(bpsCardT("No map files found in /local/bps_maps."));
+      throw new Error(bpsCardT("No map files found in config/bps_maps."));
     }
 
     const normalizedFloor = this._normalize(floorName);
     const exactName = maps.find((m) => this._normalize(m) === normalizedFloor);
     if (exactName) {
-      return `/local/bps_maps/${exactName}`;
+      return this._mapApiUrl(exactName);
     }
 
     const byBaseName = maps.find((m) => {
@@ -756,15 +766,43 @@ class BpsMapCard extends HTMLElement {
       return this._normalize(base) === normalizedFloor;
     });
     if (byBaseName) {
-      return `/local/bps_maps/${byBaseName}`;
+      return this._mapApiUrl(byBaseName);
     }
 
     throw new Error(
-      `No map image matched floor "${floorName}". Add map_file, image, or rename a file in /local/bps_maps.`,
+      `No map image matched floor "${floorName}". Add map_file, image, or rename a file in config/bps_maps.`,
     );
   }
 
-  _loadFloorImage(url, expectedGen) {
+  // An /api/bps/ image needs the Bearer token, which an <img> can't send:
+  // fetch it with _apiFetch and draw it from a blob: URL instead.
+  async _loadFloorImage(url, expectedGen) {
+    let src = url;
+    let objectUrl = null;
+    if (String(url).startsWith("/api/bps/")) {
+      const res = await this._apiFetch(url);
+      if (!res) throw new Error("BPS auth not ready (no token / backing off)");
+      if (!res.ok) throw new Error(`Could not load floor image (${res.status}): ${url}`);
+      objectUrl = URL.createObjectURL(await res.blob());
+      src = objectUrl;
+    }
+    try {
+      await this._loadImageElement(src, url, expectedGen);
+    } catch (e) {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      throw e;
+    }
+    if (objectUrl) {
+      if (expectedGen !== this._runGeneration) {
+        URL.revokeObjectURL(objectUrl);
+      } else {
+        if (this._floorObjectUrl) URL.revokeObjectURL(this._floorObjectUrl);
+        this._floorObjectUrl = objectUrl;
+      }
+    }
+  }
+
+  _loadImageElement(src, url, expectedGen) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
@@ -779,7 +817,7 @@ class BpsMapCard extends HTMLElement {
         resolve();
       };
       img.onerror = () => reject(new Error(`Could not load floor image: ${url}`));
-      img.src = url;
+      img.src = src;
     });
   }
 
@@ -1191,7 +1229,7 @@ class BpsMapCardEditor extends HTMLElement {
     root.appendChild(entRow);
     this._inputs.entities = entInp;
 
-    mk("Map file (optional, filename in www/bps_maps)", "map_file", "text", "floor.png");
+    mk("Map file (optional, filename in config/bps_maps)", "map_file", "text", "floor.png");
     mk("Image URL (optional, overrides map file)", "image", "text", "https://...");
     mk("Poll interval (seconds)", "poll_interval", "number", "3");
     mk("Label scale (percent, e.g. 100 or 200)", "scale_labels", "number", "100");

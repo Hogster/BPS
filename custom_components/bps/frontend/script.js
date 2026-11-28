@@ -4465,6 +4465,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         ctx.restore();
     }
 
+    // Floor images are served only to logged-in users, at /api/bps/map/<file>
+    // (they used to be public under /local/bps_maps). An <img> can't send the
+    // Bearer token, so fetch the image with bpsFetch and hand back a blob: URL.
+    // Resolves to "" when the image can't be fetched, which the image's
+    // onerror path already reports.
+    async function bpsImageSrc(url) {
+        try {
+            const res = await bpsFetch(url);
+            if (!res.ok) {
+                console.error(`Failed to fetch floor image ${url}: ${res.status}`);
+                return "";
+            }
+            return URL.createObjectURL(await res.blob());
+        } catch (e) {
+            console.error(`Failed to fetch floor image ${url}:`, e);
+            return "";
+        }
+    }
+    let floorObjectUrl = null;
+
     // Display selected map
     async function selectExistingMap(value) {
         // Abandon any in-progress draw/edit so its handlers and half-built
@@ -4475,7 +4495,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         selectedVertex = null;
         draggingZone = false;
         editTarget = null;
-        img.src = `/local/bps_maps/${value}`;
+        const src = await bpsImageSrc(`/api/bps/map/${encodeURIComponent(value)}`);
+        if (floorObjectUrl) URL.revokeObjectURL(floorObjectUrl);
+        floorObjectUrl = src || null;
+        img.src = src;
         imgfilename = value;
         mapname.value = removeExtension(value);
         SelMapName = mapname.value;
@@ -5814,14 +5837,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         return `hsla(${hue}, ${70 + 20 * t}%, ${42 + 8 * Math.sin(Math.PI * t)}%, ${alpha})`;
     }
 
-    function plLoadImage(url) {
-        if (!url) return Promise.resolve(null);
-        if (plImgCache[url]) return Promise.resolve(plImgCache[url]);
+    async function plLoadImage(url) {
+        if (!url) return null;
+        if (plImgCache[url]) return plImgCache[url];
+        const src = url.startsWith("/api/bps/") ? await bpsImageSrc(url) : url;
+        if (!src) return null;
         return new Promise((resolve) => {
             const im = new Image();
             im.onload = () => { plImgCache[url] = im; resolve(im); };
             im.onerror = () => resolve(null);
-            im.src = url;
+            im.src = src;
         });
     }
 

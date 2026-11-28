@@ -1,7 +1,7 @@
 """Path-safety of the (unauthenticated) save_text file handling — audit #2.
 
 _safe_maps_child is the single choke point that keeps client-supplied
-filenames from escaping www/bps_maps; these lock its behaviour down, plus the
+filenames from escaping config/bps_maps; these lock its behaviour down, plus the
 _write_save write-after-validate ordering.
 """
 import asyncio
@@ -11,7 +11,7 @@ import bps
 from conftest import make_hass
 
 
-MAPS = "/config/www/bps_maps"
+MAPS = "/config/bps_maps"
 
 
 def run(coro):
@@ -36,7 +36,7 @@ def test_plain_filename_is_contained():
     got = child("first_floor.png")
     assert got is not None
     assert got.name == "first_floor.png"
-    assert str(got).replace("\\", "/").endswith("www/bps_maps/first_floor.png")
+    assert str(got).replace("\\", "/").endswith("/config/bps_maps/first_floor.png")
 
 
 def test_parent_traversal_is_stripped_to_basename():
@@ -172,3 +172,54 @@ def test_delete_traversal_still_blocked(tmp_path):
     outside.write_bytes(b"x")
     run(_write(hass, maps, _Dict(remove="../secret.png"), {}))
     assert outside.exists()  # '../' collapsed to basename; the real file survives
+
+
+# --- Map images are served only behind auth (no longer public via /local/) ---
+class _Req:
+    def __init__(self, hass):
+        self.app = {"hass": hass}
+
+
+def test_map_image_view_requires_auth():
+    assert bps.BPSMapImageAPI.requires_auth is True
+    assert bps.BPSMapImageAPI.url == "/api/bps/map/{filename}"
+
+
+def test_map_image_view_serves_file_from_private_dir(tmp_path):
+    hass = make_hass(tmp_path)
+    maps = tmp_path / "bps_maps"
+    maps.mkdir()
+    (maps / "first floor.png").write_bytes(b"png")
+    res = run(bps.BPSMapImageAPI().get(_Req(hass), "first floor.png"))
+    assert res.status == 200
+    assert bps.Path(res.path) == (maps / "first floor.png").resolve()
+    assert res.headers["Cache-Control"].startswith("private")
+    assert "sandbox" in res.headers["Content-Security-Policy"]
+
+
+def test_map_image_view_never_reads_outside_maps_dir(tmp_path):
+    hass = make_hass(tmp_path)
+    (tmp_path / "bps_maps").mkdir()
+    (tmp_path / "secret.png").write_bytes(b"x")
+    res = run(bps.BPSMapImageAPI().get(_Req(hass), "../secret.png"))
+    assert res.status == 404          # collapsed to bps_maps/secret.png, which isn't there
+    res = run(bps.BPSMapImageAPI().get(_Req(hass), "notes.txt"))
+    assert res.status == 400          # not an image extension
+
+
+def test_map_image_view_ignores_old_public_folder(tmp_path):
+    hass = make_hass(tmp_path)
+    (tmp_path / "bps_maps").mkdir()
+    old = tmp_path / "www" / "bps_maps"
+    old.mkdir(parents=True)
+    (old / "home.png").write_bytes(b"x")
+    res = run(bps.BPSMapImageAPI().get(_Req(hass), "home.png"))
+    assert res.status == 404
+
+
+def test_map_urls_point_at_authenticated_view(tmp_path):
+    hass = make_hass(tmp_path)
+    maps = tmp_path / "bps_maps"
+    maps.mkdir()
+    (maps / "Main floor.png").write_bytes(b"x")
+    assert bps._map_urls(hass) == {"Main floor": "/api/bps/map/Main%20floor.png"}
